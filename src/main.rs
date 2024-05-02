@@ -5,6 +5,7 @@ use log::{error, info};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
@@ -17,16 +18,16 @@ pub struct Opts {
     url: url::Url,
 }
 
-pub async fn run(opts: Opts) -> Result<(), Error> {
+pub async fn run(opts: Opts, tx: broadcast::Sender<Vec<u8>>) -> Result<(), Error> {
     let session_group = Arc::new(SessionGroup::default());
-    let r = run_inner(opts, session_group.clone()).await;
+    let r = run_inner(opts, session_group.clone(), tx).await;
     if let Err(e) = session_group.await_teardown().await {
         error!("TEARDOWN failed: {}", e);
     }
     r
 }
 
-async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>) -> Result<(), Error> {
+async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::Sender<Vec<u8>>) -> Result<(), Error> {
     let stop = tokio::signal::ctrl_c();
 
     let mut session = retina::client::Session::describe(
@@ -68,6 +69,9 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>) -> Result<(), E
                             m.timestamp().timestamp(),
                             m.data().len(),
                         );
+                        if let Err(e) = tx.send(m.data().to_vec()) {
+                            error!("Error broadcasting message: {}", e);
+                        }                        
                     },
                     _ => continue,
                 };
@@ -84,12 +88,14 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>) -> Result<(), E
 async fn main() {
     let _ = env_logger::init();
 
+    let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
     // Start the WebSocket server
     info!("start websocket");
     let listener = TcpListener::bind("0.0.0.0:9001").await.unwrap();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(accept_connection(stream));
+            let receiver = rx.resubscribe();
+            tokio::spawn(accept_connection(stream, receiver));
         }
     });
 
@@ -97,7 +103,7 @@ async fn main() {
     info!("start rtsp client");
     if let Err(e) = {
         let opts = Opts::parse();
-        run(opts).await
+        run(opts, tx).await
     } {
         error!("Fatal: {}", itertools::join(e.chain(), "\ncaused by: "));
         std::process::exit(1);
@@ -107,13 +113,23 @@ async fn main() {
     info!("Done");
 }
 
-async fn accept_connection(stream: tokio::net::TcpStream) {
+async fn accept_connection(stream: tokio::net::TcpStream, mut rx: broadcast::Receiver<Vec<u8>>) {
     let mut websocket = accept_async(stream).await.unwrap();
 
-    while let Some(msg) = websocket.next().await {
-        let msg = msg.unwrap();
-        if msg.is_text() || msg.is_binary() {
-            websocket.send(Message::Text("Hello".to_string())).await.unwrap();
-        }
+    while let Ok(msg) = rx.recv().await {
+        match websocket.send(Message::Binary(msg.to_vec())).await {
+            Ok(_) => {},
+            Err(e) => match e {
+                tokio_tungstenite::tungstenite::Error::ConnectionClosed | tokio_tungstenite::tungstenite::Error::AlreadyClosed => {
+                    println!("WebSocket connection was closed");
+                    break;
+                },
+                tokio_tungstenite::tungstenite::Error::Io(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
+                    println!("Broken pipe error");
+                    break;
+                },                
+                _ => eprintln!("Error sending message to WebSocket: {}", e),
+            },
+        }        
     }
 }
