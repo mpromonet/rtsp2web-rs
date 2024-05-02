@@ -12,6 +12,6 @@ tokio = { version = "1.5", features = ["fs", "io-util", "macros", "rt-multi-thre
 clap = { version = "4.1", features = ["derive"] }
 itertools = "0.12"
 url = "2.5"
-env_logger = "0.4"
+env_logger = "0.11"
 tungstenite = "0.21.0"
 tokio-tungstenite = "0.21.0"
