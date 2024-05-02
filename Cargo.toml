@@ -1,0 +1,16 @@
+[package]
+name = "rs-rtsp2web"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+retina = "*"
+futures = "0.3"
+anyhow = "1.0"
+log = "0.4"
+tokio = { version = "1.5", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal"] }
+clap = { version = "4.1", features = ["derive"] }
+itertools = "0.12"
+url = "2.5"
+env_logger = "0.4"
+
