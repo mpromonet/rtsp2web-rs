@@ -1,7 +1,16 @@
+/* ---------------------------------------------------------------------------
+** This software is in the public domain, furnished "as is", without technical
+** support, and with no warranty, express or implied, as to its usefulness for
+** any purpose.
+**
+** SPDX-License-Identifier: Unlicense
+**
+** -------------------------------------------------------------------------*/
+
 use anyhow::{anyhow, Error};
 use clap::Parser;
 use futures::{StreamExt, SinkExt};
-use log::{error, info};
+use log::{error, info, debug};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
 use std::sync::Arc;
@@ -64,7 +73,7 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
             item = videosession.next() => {
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
                     CodecItem::VideoFrame(m) => {
-                        info!(
+                        debug!(
                             "{}: size:{}\n",
                             m.timestamp().timestamp(),
                             m.data().len(),
@@ -121,14 +130,14 @@ async fn accept_connection(stream: tokio::net::TcpStream, mut rx: broadcast::Rec
             Ok(_) => {},
             Err(e) => match e {
                 tokio_tungstenite::tungstenite::Error::ConnectionClosed | tokio_tungstenite::tungstenite::Error::AlreadyClosed => {
-                    println!("WebSocket connection was closed");
+                    info!("WebSocket connection was closed");
                     break;
                 },
                 tokio_tungstenite::tungstenite::Error::Io(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
-                    println!("Broken pipe error");
+                    info!("Broken pipe error");
                     break;
                 },                
-                _ => eprintln!("Error sending message to WebSocket: {}", e),
+                _ => debug!("Error sending message to WebSocket: {}", e),
             },
         }        
     }
