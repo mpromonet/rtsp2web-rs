@@ -1,10 +1,14 @@
 use anyhow::{anyhow, Error};
 use clap::Parser;
-use futures::StreamExt;
+use futures::{StreamExt, SinkExt};
 use log::{error, info};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
 use std::sync::Arc;
+
+use tokio::net::TcpListener;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 #[derive(Parser)]
 pub struct Opts {
@@ -79,6 +83,18 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>) -> Result<(), E
 #[tokio::main]
 async fn main() {
     let _ = env_logger::init();
+
+    // Start the WebSocket server
+    info!("start websocket");
+    let listener = TcpListener::bind("0.0.0.0:9001").await.unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            tokio::spawn(accept_connection(stream));
+        }
+    });
+
+    // Start the RTSP client
+    info!("start rtsp client");
     if let Err(e) = {
         let opts = Opts::parse();
         run(opts).await
@@ -86,5 +102,18 @@ async fn main() {
         error!("Fatal: {}", itertools::join(e.chain(), "\ncaused by: "));
         std::process::exit(1);
     }
+
+
     info!("Done");
+}
+
+async fn accept_connection(stream: tokio::net::TcpStream) {
+    let mut websocket = accept_async(stream).await.unwrap();
+
+    while let Some(msg) = websocket.next().await {
+        let msg = msg.unwrap();
+        if msg.is_text() || msg.is_binary() {
+            websocket.send(Message::Text("Hello".to_string())).await.unwrap();
+        }
+    }
 }
