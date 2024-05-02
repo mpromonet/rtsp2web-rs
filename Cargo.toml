@@ -13,5 +13,5 @@ clap = { version = "4.1", features = ["derive"] }
 itertools = "0.12"
 url = "2.5"
 env_logger = "0.4"
-tungstenite = "0.15.0"
+tungstenite = "0.20.1"
 tokio-tungstenite = "0.15.0"
