@@ -20,6 +20,11 @@ use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+use actix_web::{get, web, App, HttpServer, HttpResponse};
+use actix_files::Files;
+use serde_json::json;
+
+
 #[derive(Parser)]
 pub struct Opts {
     /// `rtsp://` URL to connect to.
@@ -97,7 +102,9 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
 async fn main() {
     let _ = env_logger::init();
 
+    // Create a broadcast channel to send video frames to the WebSocket server
     let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
+
     // Start the WebSocket server
     info!("start websocket");
     let listener = TcpListener::bind("0.0.0.0:9001").await.unwrap();
@@ -106,6 +113,22 @@ async fn main() {
             let receiver = rx.resubscribe();
             tokio::spawn(accept_connection(stream, receiver));
         }
+    });
+
+    // Start the Actix web server
+    info!("start actix web server");
+    tokio::spawn(async {
+        HttpServer::new(|| {
+            App::new()
+                .service(version)
+                .service(streams)
+                .service(web::redirect("/", "/index.html"))
+                .service(Files::new("/", "./www").show_files_listing())
+        })
+        .bind(("0.0.0.0", 8080)).unwrap()
+        .run()
+        .await
+        .unwrap();
     });
 
     // Start the RTSP client
@@ -141,4 +164,20 @@ async fn accept_connection(stream: tokio::net::TcpStream, mut rx: broadcast::Rec
             },
         }        
     }
+}
+
+#[get("/api/streams")]
+async fn streams() -> HttpResponse {
+    let data = json!({
+        "/ws": "stream1",
+    });
+
+    HttpResponse::Ok().json(data)
+}
+
+#[get("/api/version")]
+async fn version() -> HttpResponse {
+    let data = json!("version");
+
+    HttpResponse::Ok().json(data)
 }
