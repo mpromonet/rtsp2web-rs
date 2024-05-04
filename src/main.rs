@@ -9,20 +9,20 @@
 
 use anyhow::{anyhow, Error};
 use clap::Parser;
-use futures::{StreamExt, SinkExt};
+use futures::StreamExt;
 use log::{error, info, debug};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use tokio::net::TcpListener;
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
-
-use actix_web::{get, web, App, HttpServer, HttpResponse};
+use actix::{Actor, AsyncContext, StreamHandler};
+use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
 use actix_files::Files;
+use actix_web_actors::ws;
 use serde_json::json;
+
 
 
 #[derive(Parser)]
@@ -98,28 +98,78 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
     Ok(())
 }
 
+struct MyWs {
+    rx: broadcast::Receiver<Vec<u8>>,
+}
+
+impl MyWs {
+    fn new(rx: broadcast::Receiver<Vec<u8>>) -> Self {
+        Self { rx }
+    }
+}
+
+impl Clone for MyWs {
+    fn clone(&self) -> Self {
+        Self {
+            rx: self.rx.resubscribe(),
+        }
+    }
+}
+
+impl Actor for MyWs {
+    type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        info!("Websocket connected");
+
+        let rx = self.rx.resubscribe();
+        let stream = tokio_stream::wrappers::BroadcastStream::<Vec<u8>>::new(rx);
+        ctx.add_stream(stream);
+    }
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        info!("Websocket disconnected");
+    }    
+}
+
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            _ => (),
+        }
+    }
+}
+
+impl StreamHandler<Result<Vec<u8>, BroadcastStreamRecvError>> for MyWs {
+    fn handle(&mut self, msg: Result<Vec<u8>, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(msg) => ctx.binary(msg),
+            _ => (),
+        }
+    }
+}
+
+async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<MyWs>) -> Result<HttpResponse, actix_web::Error> {
+    let rx = data.get_ref().rx.resubscribe();
+    let resp = ws::start(MyWs::new(rx), &req, stream);
+    resp
+}
+
 #[tokio::main]
 async fn main() {
-    let _ = env_logger::init();
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // Create a broadcast channel to send video frames to the WebSocket server
     let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
-
-    // Start the WebSocket server
-    info!("start websocket");
-    let listener = TcpListener::bind("0.0.0.0:9001").await.unwrap();
-    tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
-            let receiver = rx.resubscribe();
-            tokio::spawn(accept_connection(stream, receiver));
-        }
-    });
+    let app_state = MyWs::new(rx);
 
     // Start the Actix web server
     info!("start actix web server");
     tokio::spawn(async {
-        HttpServer::new(|| {
-            App::new()
+        HttpServer::new( move || {
+            App::new().app_data(web::Data::new(app_state.clone()))
+                .route("/ws", web::get().to(ws_index))
                 .service(version)
                 .service(streams)
                 .service(web::redirect("/", "/index.html"))
@@ -143,27 +193,6 @@ async fn main() {
 
 
     info!("Done");
-}
-
-async fn accept_connection(stream: tokio::net::TcpStream, mut rx: broadcast::Receiver<Vec<u8>>) {
-    let mut websocket = accept_async(stream).await.unwrap();
-
-    while let Ok(msg) = rx.recv().await {
-        match websocket.send(Message::Binary(msg.to_vec())).await {
-            Ok(_) => {},
-            Err(e) => match e {
-                tokio_tungstenite::tungstenite::Error::ConnectionClosed | tokio_tungstenite::tungstenite::Error::AlreadyClosed => {
-                    info!("WebSocket connection was closed");
-                    break;
-                },
-                tokio_tungstenite::tungstenite::Error::Io(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {
-                    info!("Broken pipe error");
-                    break;
-                },                
-                _ => debug!("Error sending message to WebSocket: {}", e),
-            },
-        }        
-    }
 }
 
 #[get("/api/streams")]
