@@ -38,7 +38,6 @@ impl Actor for MyWs {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Websocket connected");
-
         let rx = self.rx.resubscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::<Vec<u8>>::new(rx);
         ctx.add_stream(stream);
@@ -68,7 +67,6 @@ impl StreamHandler<Result<Vec<u8>, BroadcastStreamRecvError>> for MyWs {
 }
 
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<MyWs>) -> Result<HttpResponse, actix_web::Error> {
-    let rx = data.get_ref().rx.resubscribe();
-    let resp = ws::start(MyWs::new(rx), &req, stream);
-    resp
+    let myws = data.get_ref();
+    ws::start(myws.clone(), &req, stream)
 }

@@ -101,13 +101,13 @@ async fn main() {
 
     // Create a broadcast channel to send video frames to the WebSocket server
     let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
-    let app_state = wsservice::MyWs::new(rx);
+    let myws = wsservice::MyWs::new(rx);
 
     // Start the Actix web server
     info!("start actix web server");
     tokio::spawn(async {
         HttpServer::new( move || {
-            App::new().app_data(web::Data::new(app_state.clone()))
+            App::new().app_data(web::Data::new(myws.clone()))
                 .route("/ws", web::get().to(wsservice::ws_index))
                 .service(version)
                 .service(streams)
