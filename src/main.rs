@@ -8,22 +8,18 @@
 ** -------------------------------------------------------------------------*/
 
 use anyhow::{anyhow, Error};
+use actix_files::Files;
+use actix_web::{get, web, App, HttpServer, HttpResponse};
 use clap::Parser;
 use futures::StreamExt;
 use log::{error, info, debug};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
-use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use actix::{Actor, AsyncContext, StreamHandler};
-use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
-use actix_files::Files;
-use actix_web_actors::ws;
-use serde_json::json;
-
-
+mod wsservice;
 
 #[derive(Parser)]
 pub struct Opts {
@@ -79,7 +75,7 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
                     CodecItem::VideoFrame(m) => {
                         debug!(
-                            "{}: size:{}\n",
+                            "{}: size:{}",
                             m.timestamp().timestamp(),
                             m.data().len(),
                         );
@@ -98,63 +94,6 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
     Ok(())
 }
 
-struct MyWs {
-    rx: broadcast::Receiver<Vec<u8>>,
-}
-
-impl MyWs {
-    fn new(rx: broadcast::Receiver<Vec<u8>>) -> Self {
-        Self { rx }
-    }
-}
-
-impl Clone for MyWs {
-    fn clone(&self) -> Self {
-        Self {
-            rx: self.rx.resubscribe(),
-        }
-    }
-}
-
-impl Actor for MyWs {
-    type Context = ws::WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        info!("Websocket connected");
-
-        let rx = self.rx.resubscribe();
-        let stream = tokio_stream::wrappers::BroadcastStream::<Vec<u8>>::new(rx);
-        ctx.add_stream(stream);
-    }
-
-    fn stopped(&mut self, _ctx: &mut Self::Context) {
-        info!("Websocket disconnected");
-    }    
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-            _ => (),
-        }
-    }
-}
-
-impl StreamHandler<Result<Vec<u8>, BroadcastStreamRecvError>> for MyWs {
-    fn handle(&mut self, msg: Result<Vec<u8>, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(msg) => ctx.binary(msg),
-            _ => (),
-        }
-    }
-}
-
-async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<MyWs>) -> Result<HttpResponse, actix_web::Error> {
-    let rx = data.get_ref().rx.resubscribe();
-    let resp = ws::start(MyWs::new(rx), &req, stream);
-    resp
-}
 
 #[tokio::main]
 async fn main() {
@@ -162,14 +101,14 @@ async fn main() {
 
     // Create a broadcast channel to send video frames to the WebSocket server
     let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
-    let app_state = MyWs::new(rx);
+    let app_state = wsservice::MyWs::new(rx);
 
     // Start the Actix web server
     info!("start actix web server");
     tokio::spawn(async {
         HttpServer::new( move || {
             App::new().app_data(web::Data::new(app_state.clone()))
-                .route("/ws", web::get().to(ws_index))
+                .route("/ws", web::get().to(wsservice::ws_index))
                 .service(version)
                 .service(streams)
                 .service(web::redirect("/", "/index.html"))
