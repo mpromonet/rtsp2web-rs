@@ -37,7 +37,7 @@ pub async fn run(opts: Opts, tx: broadcast::Sender<wsservice::Frame>) -> Result<
     r
 }
 
-fn process_video_frame(m: VideoFrame, video_params: retina::codec::VideoParameters, cfg: Vec<u8>, tx: broadcast::Sender<wsservice::Frame>) {
+fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Sender<wsservice::Frame>) {
     debug!(
         "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
         m.timestamp().timestamp(),
@@ -49,7 +49,7 @@ fn process_video_frame(m: VideoFrame, video_params: retina::codec::VideoParamete
     let mut metadata = json!({
         "ts": m.timestamp().timestamp(),
         "media": "video",
-        "codec": video_params.rfc6381_codec(),
+        "codec": codec,
     });
     let mut data: Vec<u8> = vec![];
     if m.is_random_access_point() {
@@ -103,21 +103,7 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
         None => unreachable!(),
     };
     info!("video_params:{:?}", video_params);
-
-    session
-        .setup(video_stream, SetupOptions::default())
-        .await?;
-
-    let mut videosession = session
-        .play(retina::client::PlayOptions::default())
-        .await?
-        .demuxed()?;
-
-    let p =  videosession.streams()[video_stream].parameters();
-    let extra_data = match p {
-        Some(retina::codec::ParametersRef::Video(v)) => v.extra_data(),
-        _ => b"",
-    };
+    let extra_data = video_params.extra_data();
     info!("extra_data:{:?}", extra_data);
 
     let sps_position = extra_data.iter().position(|&nal| nal & 0x1F == 7);
@@ -134,12 +120,21 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
         }
     }
 
+    session
+        .setup(video_stream, SetupOptions::default())
+        .await?;
+
+    let mut videosession = session
+        .play(retina::client::PlayOptions::default())
+        .await?
+        .demuxed()?;
+
     tokio::pin!(stop);
     loop {
         tokio::select! {
             item = videosession.next() => {
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
-                    CodecItem::VideoFrame(m) => process_video_frame(m, video_params.clone(), cfg.clone(), tx.clone()),
+                    CodecItem::VideoFrame(m) => process_video_frame(m, video_params.rfc6381_codec(), cfg.as_slice(), tx.clone()),
                     _ => continue,
                 };
             },
