@@ -7,14 +7,14 @@
 **
 ** -------------------------------------------------------------------------*/
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Error, bail};
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpResponse};
 use clap::Parser;
 use futures::StreamExt;
 use log::{error, info, debug};
 use retina::client::{SessionGroup, SetupOptions};
-use retina::codec::CodecItem;
+use retina::codec::{CodecItem, VideoFrame};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -28,7 +28,7 @@ pub struct Opts {
     url: url::Url,
 }
 
-pub async fn run(opts: Opts, tx: broadcast::Sender<Vec<u8>>) -> Result<(), Error> {
+pub async fn run(opts: Opts, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
     let session_group = Arc::new(SessionGroup::default());
     let r = run_inner(opts, session_group.clone(), tx).await;
     if let Err(e) = session_group.await_teardown().await {
@@ -37,7 +37,7 @@ pub async fn run(opts: Opts, tx: broadcast::Sender<Vec<u8>>) -> Result<(), Error
     r
 }
 
-async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::Sender<Vec<u8>>) -> Result<(), Error> {
+async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
     let stop = tokio::signal::ctrl_c();
 
     let mut session = retina::client::Session::describe(
@@ -59,6 +59,13 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
         })
         .ok_or_else(|| anyhow!("couldn't find video stream"))?;
 
+    let video_params = match session.streams()[video_stream].parameters() {
+        Some(retina::codec::ParametersRef::Video(v)) => v.clone(),
+        Some(_) => unreachable!(),
+        None => unreachable!(),
+    };
+    info!("video_params:{:?}", video_params);
+
     session
         .setup(video_stream, SetupOptions::default())
         .await?;
@@ -75,11 +82,28 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
                     CodecItem::VideoFrame(m) => {
                         debug!(
-                            "{}: size:{}",
+                            "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
                             m.timestamp().timestamp(),
                             m.data().len(),
+                            m.is_random_access_point(),
+                            m.has_new_parameters(),
                         );
-                        if let Err(e) = tx.send(m.data().to_vec()) {
+
+                        let mut metadata = json!({
+                            "ts": m.timestamp().timestamp(),
+                            "media": "video",
+                            "codec": video_params.rfc6381_codec(),
+                        });
+                        if m.is_random_access_point() {
+                            metadata["type"] = "keyframe".into();
+                        }
+
+                        let frame = wsservice::Frame {
+                            metadata,
+                            data: convert_h264(m)?.into(),
+                        };
+
+                        if let Err(e) = tx.send(frame) {
                             error!("Error broadcasting message: {}", e);
                         }                        
                     },
@@ -100,7 +124,7 @@ async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     // Create a broadcast channel to send video frames to the WebSocket server
-    let (tx, rx) = broadcast::channel::<Vec<u8>>(100);
+    let (tx, rx) = broadcast::channel::<wsservice::Frame>(100);
     let myws = wsservice::MyWs::new(rx);
 
     // Start the Actix web server
@@ -148,4 +172,25 @@ async fn version() -> HttpResponse {
     let data = json!("version");
 
     HttpResponse::Ok().json(data)
+}
+
+fn convert_h264(frame: VideoFrame) -> Result<Vec<u8>, Error> {
+    let mut data = frame.into_data();
+    let mut i = 0;
+    while i < data.len() - 3 {
+        // Replace each NAL's length with the Annex B start code b"\x00\x00\x00\x01".
+        let len = u32::from_be_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as usize;
+        data[i] = 0;
+        data[i + 1] = 0;
+        data[i + 2] = 0;
+        data[i + 3] = 1;
+        i += 4 + len;
+        if i > data.len() {
+            bail!("partial NAL body");
+        }
+    }
+    if i < data.len() {
+        bail!("partial NAL length");
+    }
+    Ok(data)
 }

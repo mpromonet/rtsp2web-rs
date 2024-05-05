@@ -15,12 +15,18 @@ use log::info;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
+#[derive(Clone)]
+pub struct Frame {
+    pub metadata: serde_json::Value,
+    pub data: Vec<u8>,
+}
+
 pub struct MyWs {
-    rx: broadcast::Receiver<Vec<u8>>,
+    rx: broadcast::Receiver<Frame>,
 }
 
 impl MyWs {
-    pub fn new(rx: broadcast::Receiver<Vec<u8>>) -> Self {
+    pub fn new(rx: broadcast::Receiver<Frame>) -> Self {
         Self { rx }
     }
 }
@@ -39,7 +45,7 @@ impl Actor for MyWs {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Websocket connected");
         let rx = self.rx.resubscribe();
-        let stream = tokio_stream::wrappers::BroadcastStream::<Vec<u8>>::new(rx);
+        let stream = tokio_stream::wrappers::BroadcastStream::<Frame>::new(rx);
         ctx.add_stream(stream);
     }
 
@@ -57,10 +63,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
     }
 }
 
-impl StreamHandler<Result<Vec<u8>, BroadcastStreamRecvError>> for MyWs {
-    fn handle(&mut self, msg: Result<Vec<u8>, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
+impl StreamHandler<Result<Frame, BroadcastStreamRecvError>> for MyWs {
+    fn handle(&mut self, msg: Result<Frame, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
         match msg {
-            Ok(msg) => ctx.binary(msg),
+            Ok(msg) => {
+                ctx.text(serde_json::to_string(&msg.metadata).unwrap());
+                ctx.binary(msg.data);
+            },
             _ => (),
         }
     }
