@@ -7,7 +7,7 @@
 **
 ** -------------------------------------------------------------------------*/
 
-use anyhow::{anyhow, Error, bail};
+use anyhow::{anyhow, Error};
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpResponse};
 use clap::Parser;
@@ -35,6 +35,44 @@ pub async fn run(opts: Opts, tx: broadcast::Sender<wsservice::Frame>) -> Result<
         error!("TEARDOWN failed: {}", e);
     }
     r
+}
+
+fn process_video_frame(m: VideoFrame, video_params: retina::codec::VideoParameters, cfg: Vec<u8>, tx: broadcast::Sender<wsservice::Frame>) {
+    debug!(
+        "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
+        m.timestamp().timestamp(),
+        m.data().len(),
+        m.is_random_access_point(),
+        m.has_new_parameters(),
+    );
+
+    let mut metadata = json!({
+        "ts": m.timestamp().timestamp(),
+        "media": "video",
+        "codec": video_params.rfc6381_codec(),
+    });
+    let mut data: Vec<u8> = vec![];
+    if m.is_random_access_point() {
+        metadata["type"] = "keyframe".into();
+        data.extend_from_slice(&cfg);
+    }
+    let mut framedata = m.data().to_vec();
+    if framedata.len() > 3 {
+        framedata[0] = 0;
+        framedata[1] = 0;
+        framedata[2] = 0;
+        framedata[3] = 1;
+    }
+    data.extend_from_slice(framedata.as_slice());
+
+    let frame = wsservice::Frame {
+        metadata,
+        data,
+    };
+
+    if let Err(e) = tx.send(frame) {
+        error!("Error broadcasting message: {}", e);
+    }                        
 }
 
 async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
@@ -75,38 +113,33 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
         .await?
         .demuxed()?;
 
+    let p =  videosession.streams()[video_stream].parameters();
+    let extra_data = match p {
+        Some(retina::codec::ParametersRef::Video(v)) => v.extra_data(),
+        _ => b"",
+    };
+    info!("extra_data:{:?}", extra_data);
+
+    let sps_position = extra_data.iter().position(|&nal| nal & 0x1F == 7);
+    let pps_position = extra_data.iter().position(|&nal| nal & 0x1F == 8);
+
+    let mut cfg: Vec<u8> = vec![];
+    if let (Some(sps), Some(pps)) = (sps_position, pps_position) {
+        if sps < pps {
+            cfg = vec![0x00, 0x00, 0x00, 0x01];
+            cfg.extend_from_slice(&extra_data[sps..pps]);
+            cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+            cfg.extend_from_slice(&extra_data[pps..]);
+            println!("CFG: {:?}", cfg);
+        }
+    }
+
     tokio::pin!(stop);
     loop {
         tokio::select! {
             item = videosession.next() => {
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
-                    CodecItem::VideoFrame(m) => {
-                        debug!(
-                            "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
-                            m.timestamp().timestamp(),
-                            m.data().len(),
-                            m.is_random_access_point(),
-                            m.has_new_parameters(),
-                        );
-
-                        let mut metadata = json!({
-                            "ts": m.timestamp().timestamp(),
-                            "media": "video",
-                            "codec": video_params.rfc6381_codec(),
-                        });
-                        if m.is_random_access_point() {
-                            metadata["type"] = "keyframe".into();
-                        }
-
-                        let frame = wsservice::Frame {
-                            metadata,
-                            data: convert_h264(m)?.into(),
-                        };
-
-                        if let Err(e) = tx.send(frame) {
-                            error!("Error broadcasting message: {}", e);
-                        }                        
-                    },
+                    CodecItem::VideoFrame(m) => process_video_frame(m, video_params.clone(), cfg.clone(), tx.clone()),
                     _ => continue,
                 };
             },
@@ -172,25 +205,4 @@ async fn version() -> HttpResponse {
     let data = json!("version");
 
     HttpResponse::Ok().json(data)
-}
-
-fn convert_h264(frame: VideoFrame) -> Result<Vec<u8>, Error> {
-    let mut data = frame.into_data();
-    let mut i = 0;
-    while i < data.len() - 3 {
-        // Replace each NAL's length with the Annex B start code b"\x00\x00\x00\x01".
-        let len = u32::from_be_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as usize;
-        data[i] = 0;
-        data[i + 1] = 0;
-        data[i + 2] = 0;
-        data[i + 3] = 1;
-        i += 4 + len;
-        if i > data.len() {
-            bail!("partial NAL body");
-        }
-    }
-    if i < data.len() {
-        bail!("partial NAL length");
-    }
-    Ok(data)
 }
