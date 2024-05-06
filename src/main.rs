@@ -155,32 +155,27 @@ async fn main() {
     let (tx, rx) = broadcast::channel::<wsservice::Frame>(100);
     let myws = wsservice::MyWs::new(rx);
 
-    // Start the Actix web server
-    info!("start actix web server");
-    tokio::spawn(async {
-        HttpServer::new( move || {
-            App::new().app_data(web::Data::new(myws.clone()))
-                .route("/ws", web::get().to(wsservice::ws_index))
-                .service(version)
-                .service(streams)
-                .service(web::redirect("/", "/index.html"))
-                .service(Files::new("/", "./www").show_files_listing())
-        })
-        .bind(("0.0.0.0", 8080)).unwrap()
-        .run()
-        .await
-        .unwrap();
-    });
-
+    let opts = Opts::parse();
     // Start the RTSP client
     info!("start rtsp client");
-    if let Err(e) = {
-        let opts = Opts::parse();
-        run(opts, tx).await
-    } {
-        error!("Fatal: {}", itertools::join(e.chain(), "\ncaused by: "));
-        std::process::exit(1);
-    }
+    tokio::spawn({
+        run(opts, tx)
+    });
+
+    // Start the Actix web server
+    info!("start actix web server");
+    HttpServer::new( move || {
+        App::new().app_data(web::Data::new(myws.clone()))
+            .route("/ws", web::get().to(wsservice::ws_index))
+            .service(version)
+            .service(streams)
+            .service(web::redirect("/", "/index.html"))
+            .service(Files::new("/", "./www").show_files_listing())
+    })
+    .bind(("0.0.0.0", 8080)).unwrap()
+    .run()
+    .await
+    .unwrap();
 
 
     info!("Done");
