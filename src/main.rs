@@ -165,12 +165,14 @@ async fn main() {
     // Start the Actix web server
     info!("start actix web server");
     HttpServer::new( move || {
-        App::new().app_data(web::Data::new(myws.clone()))
-            .route("/ws", web::get().to(wsservice::ws_index))
+        let mut app = App::new().app_data(web::Data::new(myws.clone()))
             .service(version)
             .service(streams)
             .service(web::redirect("/", "/index.html"))
-            .service(Files::new("/", "./www").show_files_listing())
+            .service(Files::new("/", "./www").show_files_listing());
+
+        app = app.route("/ws", web::get().to(wsservice::ws_index));
+        app
     })
     .bind(("0.0.0.0", 8080)).unwrap()
     .run()
