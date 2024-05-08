@@ -8,66 +8,16 @@
 ** -------------------------------------------------------------------------*/
 
 
-use std::collections::HashMap;
 
 use actix::{Actor, AsyncContext, StreamHandler};
-use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use log::info;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use crate::appcontext::DataFrame;
 
-#[derive(Clone)]
-pub struct Frame {
-    pub metadata: serde_json::Value,
-    pub data: Vec<u8>,
-}
-
-pub struct StreamsDef {
-    pub url: url::Url,
-    pub tx: broadcast::Sender<Frame>,
-    pub rx: broadcast::Receiver<Frame>,
-}
-
-impl Clone for StreamsDef {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            tx: self.tx.clone(),
-            rx: self.rx.resubscribe(),
-        }
-    }
-}
-
-impl StreamsDef {
-    pub fn new(url: url::Url) -> Self {
-        let url = url;
-        let (tx, rx) = broadcast::channel::<Frame>(100);
-
-        StreamsDef { url, tx,  rx }
-    }
-}
-
-pub struct AppContext {
-    pub streams: HashMap<String,StreamsDef>,
-}
-
-impl AppContext {
-    pub fn new(streams: HashMap<String,StreamsDef>) -> Self {
-        Self { streams }
-    }
-}
-
-impl Clone for AppContext {
-    fn clone(&self) -> Self {
-        Self {
-            streams: self.streams.clone(),
-        }
-    }
-}
-
-struct MyWebsocket {
-    pub rx: broadcast::Receiver<Frame>,
+pub struct MyWebsocket {
+    pub rx: broadcast::Receiver<DataFrame>,
 }
 
 impl Actor for MyWebsocket {
@@ -76,7 +26,7 @@ impl Actor for MyWebsocket {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Websocket connected");
         let rx = self.rx.resubscribe();
-        let stream = tokio_stream::wrappers::BroadcastStream::<Frame>::new(rx);
+        let stream = tokio_stream::wrappers::BroadcastStream::<DataFrame>::new(rx);
         ctx.add_stream(stream);
     }
 
@@ -94,8 +44,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebsocket {
     }
 }
 
-impl StreamHandler<Result<Frame, BroadcastStreamRecvError>> for MyWebsocket {
-    fn handle(&mut self, msg: Result<Frame, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
+impl StreamHandler<Result<DataFrame, BroadcastStreamRecvError>> for MyWebsocket {
+    fn handle(&mut self, msg: Result<DataFrame, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
         match msg {
             Ok(msg) => {
                 ctx.text(serde_json::to_string(&msg.metadata).unwrap());
@@ -104,11 +54,4 @@ impl StreamHandler<Result<Frame, BroadcastStreamRecvError>> for MyWebsocket {
             _ => (),
         }
     }
-}
-
-pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<AppContext>) -> Result<HttpResponse, actix_web::Error> {
-    let myws = data.get_ref();
-    let wsurl =req.path().to_string();
-    let rx = myws.streams[&wsurl].rx.resubscribe();
-    ws::start(MyWebsocket{ rx }, &req, stream)
 }
