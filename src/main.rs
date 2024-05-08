@@ -147,20 +147,6 @@ async fn run_inner(url: url::Url, session_group: Arc<SessionGroup>, tx: broadcas
     Ok(())
 }
 
-#[derive(Clone)]
-struct StreamsDefs {
-    url: url::Url,
-    tx: broadcast::Sender<wsservice::Frame>,
-}
-
-impl StreamsDefs {
-    fn new(url: url::Url) -> (Self,  broadcast::Receiver<wsservice::Frame>) {
-        let url = url;
-        let (tx, rx) = broadcast::channel::<wsservice::Frame>(100);
-
-        (StreamsDefs { url, tx }, rx)
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -169,17 +155,17 @@ async fn main() {
     let opts = Opts::parse();
 
     let mut streams_defs = HashMap::new();
-    let (def, rx) = StreamsDefs::new(opts.url.clone());
-    streams_defs.insert("/ws", def );
+    streams_defs.insert("/ws1", wsservice::StreamsDef::new(opts.url.clone()) );
+    streams_defs.insert("/ws2", wsservice::StreamsDef::new(opts.url.clone()) );
 
-    let myws = wsservice::MyWs::new(rx);
+    let myws = wsservice::AppContext::new(streams_defs);
 
     // Start the Actix web server
     info!("start actix web server");
     HttpServer::new( move || {
         let mut app = App::new().app_data(web::Data::new(myws.clone()));
 
-        for (key, streamdef) in streams_defs.clone().into_iter() {
+        for (key, streamdef) in myws.streams.clone().into_iter() {
             tokio::spawn({
                     run(streamdef.url, streamdef.tx)
             });
@@ -201,10 +187,14 @@ async fn main() {
 }
 
 #[get("/api/streams")]
-async fn streams() -> HttpResponse {
-    let data = json!({
-        "/ws": "stream1",
-    });
+async fn streams(data: web::Data<wsservice::AppContext>) -> HttpResponse {
+    let myws = data.get_ref();
+    let mut data = json!({});
+    for (key, streamdef) in myws.streams.clone().into_iter() {
+        data[key] = json!({
+            "url": streamdef.url.to_string(),
+        });
+    }
 
     HttpResponse::Ok().json(data)
 }
