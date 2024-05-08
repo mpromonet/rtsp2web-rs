@@ -16,6 +16,7 @@ use log::{error, info, debug};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::{CodecItem, VideoFrame};
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -28,9 +29,9 @@ pub struct Opts {
     url: url::Url,
 }
 
-pub async fn run(opts: Opts, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
+pub async fn run(url: url::Url, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
     let session_group = Arc::new(SessionGroup::default());
-    let r = run_inner(opts, session_group.clone(), tx).await;
+    let r = run_inner(url, session_group.clone(), tx).await;
     if let Err(e) = session_group.await_teardown().await {
         error!("TEARDOWN failed: {}", e);
     }
@@ -75,11 +76,11 @@ fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Se
     }                        
 }
 
-async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
+async fn run_inner(url: url::Url, session_group: Arc<SessionGroup>, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
     let stop = tokio::signal::ctrl_c();
 
     let mut session = retina::client::Session::describe(
-        opts.url,
+        url,
         retina::client::SessionOptions::default()
             .session_group(session_group),
     )
@@ -146,33 +147,49 @@ async fn run_inner(opts: Opts, session_group: Arc<SessionGroup>, tx: broadcast::
     Ok(())
 }
 
+#[derive(Clone)]
+struct StreamsDefs {
+    url: url::Url,
+    tx: broadcast::Sender<wsservice::Frame>,
+}
+
+impl StreamsDefs {
+    fn new(url: url::Url) -> (Self,  broadcast::Receiver<wsservice::Frame>) {
+        let url = url;
+        let (tx, rx) = broadcast::channel::<wsservice::Frame>(100);
+
+        (StreamsDefs { url, tx }, rx)
+    }
+}
 
 #[tokio::main]
 async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    // Create a broadcast channel to send video frames to the WebSocket server
-    let (tx, rx) = broadcast::channel::<wsservice::Frame>(100);
-    let myws = wsservice::MyWs::new(rx);
-
     let opts = Opts::parse();
-    // Start the RTSP client
-    info!("start rtsp client");
-    tokio::spawn({
-        run(opts, tx)
-    });
+
+    let mut streams_defs = HashMap::new();
+    let (def, rx) = StreamsDefs::new(opts.url.clone());
+    streams_defs.insert("/ws", def );
+
+    let myws = wsservice::MyWs::new(rx);
 
     // Start the Actix web server
     info!("start actix web server");
     HttpServer::new( move || {
-        let mut app = App::new().app_data(web::Data::new(myws.clone()))
-            .service(version)
+        let mut app = App::new().app_data(web::Data::new(myws.clone()));
+
+        for (key, streamdef) in streams_defs.clone().into_iter() {
+            tokio::spawn({
+                    run(streamdef.url, streamdef.tx)
+            });
+            app = app.route(key, web::get().to(wsservice::ws_index));
+        }
+
+        app.service(version)
             .service(streams)
             .service(web::redirect("/", "/index.html"))
-            .service(Files::new("/", "./www").show_files_listing());
-
-        app = app.route("/ws", web::get().to(wsservice::ws_index));
-        app
+            .service(Files::new("/", "./www").show_files_listing())
     })
     .bind(("0.0.0.0", 8080)).unwrap()
     .run()
