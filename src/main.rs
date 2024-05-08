@@ -87,9 +87,10 @@ async fn main() {
     info!("Done");
 }
 
+// Websocket handler
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<appcontext::AppContext>) -> Result<HttpResponse, actix_web::Error> {
     let myws = data.get_ref();
-    let wsurl =req.path().to_string();
+    let wsurl = req.path().to_string();
     let rx = myws.streams[&wsurl].rx.resubscribe();
     ws::start(wsservice::MyWebsocket{ rx }, &req, stream)
 }
