@@ -98,7 +98,7 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
 async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     let myws = data.get_ref();
     let mut data = json!({});
-    for (key, streamdef) in myws.streams.clone().into_iter() {
+    for (key, streamdef) in &myws.streams {
         data[key] = json!({
             "url": streamdef.url.to_string(),
         });
