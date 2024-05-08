@@ -49,11 +49,11 @@ impl StreamsDef {
 }
 
 pub struct AppContext {
-    pub streams: HashMap<&'static str,StreamsDef>,
+    pub streams: HashMap<String,StreamsDef>,
 }
 
 impl AppContext {
-    pub fn new(streams: HashMap<&'static str,StreamsDef>) -> Self {
+    pub fn new(streams: HashMap<String,StreamsDef>) -> Self {
         Self { streams }
     }
 }
@@ -108,6 +108,7 @@ impl StreamHandler<Result<Frame, BroadcastStreamRecvError>> for MyWebsocket {
 
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<AppContext>) -> Result<HttpResponse, actix_web::Error> {
     let myws = data.get_ref();
-    let rx = myws.streams[req.path()].rx.resubscribe();
+    let wsurl =req.path().to_string();
+    let rx = myws.streams[&wsurl].rx.resubscribe();
     ws::start(MyWebsocket{ rx }, &req, stream)
 }

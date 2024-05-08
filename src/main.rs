@@ -17,6 +17,8 @@ use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::{CodecItem, VideoFrame};
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -24,9 +26,16 @@ mod wsservice;
 
 #[derive(Parser)]
 pub struct Opts {
-    /// `rtsp://` URL to connect to.
-    #[clap(long)]
-    url: url::Url,
+    #[clap(short)]
+    config: String,
+}
+
+fn read_json_file(file_path: &str) -> Result<serde_json::Value, Error> {
+    let mut file = File::open(file_path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let data = serde_json::from_str(&contents)?;
+    return Ok(data);
 }
 
 pub async fn run(url: url::Url, tx: broadcast::Sender<wsservice::Frame>) -> Result<(), Error> {
@@ -155,8 +164,17 @@ async fn main() {
     let opts = Opts::parse();
 
     let mut streams_defs = HashMap::new();
-    streams_defs.insert("/ws1", wsservice::StreamsDef::new(opts.url.clone()) );
-    streams_defs.insert("/ws2", wsservice::StreamsDef::new(opts.url.clone()) );
+    match read_json_file(opts.config.as_str()) {
+        Ok(data) => {
+            let urls = data["urls"].as_object().unwrap();
+            for (key, value) in urls.into_iter() {
+                let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap().clone();
+                let wsurl = "/".to_string() + key;
+                streams_defs.insert(wsurl, wsservice::StreamsDef::new(url));
+            }
+        },
+        Err(err) => println!("Error reading JSON file: {:?}", err),
+    }
 
     let myws = wsservice::AppContext::new(streams_defs);
 
@@ -169,7 +187,7 @@ async fn main() {
             tokio::spawn({
                     run(streamdef.url, streamdef.tx)
             });
-            app = app.route(key, web::get().to(wsservice::ws_index));
+            app = app.route(&key, web::get().to(wsservice::ws_index));
         }
 
         app.service(version)
