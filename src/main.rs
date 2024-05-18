@@ -97,8 +97,12 @@ async fn main() {
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<appcontext::AppContext>) -> Result<HttpResponse, actix_web::Error> {
     let myws = data.get_ref();
     let wsurl = req.path().to_string();
-    let rx = myws.streams[&wsurl].rx.resubscribe();
-    ws::start(wsservice::MyWebsocket{ rx }, &req, stream)
+    if myws.streams.contains_key(&wsurl) {
+        let rx = myws.streams[&wsurl].rx.resubscribe();
+        ws::start(wsservice::MyWebsocket{ rx }, &req, stream)
+    } else {
+        Ok(HttpResponse::NotFound().finish())
+    }
 }
 
 #[get("/api/streams")]
