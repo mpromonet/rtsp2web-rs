@@ -14,7 +14,7 @@ use actix_web_actors::ws;
 use log::info;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
-use crate::appcontext::DataFrame;
+use crate::streamdef::DataFrame;
 
 pub struct MyWebsocket {
     pub rx: broadcast::Receiver<DataFrame>,

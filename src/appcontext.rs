@@ -7,39 +7,9 @@
 **
 ** -------------------------------------------------------------------------*/
 
-use tokio::sync::broadcast;
+
 use std::collections::HashMap;
-
-#[derive(Clone)]
-pub struct DataFrame {
-    pub metadata: serde_json::Value,
-    pub data: Vec<u8>,
-}
-
-pub struct StreamsDef {
-    pub url: url::Url,
-    pub tx: broadcast::Sender<DataFrame>,
-    pub rx: broadcast::Receiver<DataFrame>,
-}
-
-impl Clone for StreamsDef {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            tx: self.tx.clone(),
-            rx: self.rx.resubscribe(),
-        }
-    }
-}
-
-impl StreamsDef {
-    pub fn new(url: url::Url) -> Self {
-        let url = url;
-        let (tx, rx) = broadcast::channel::<DataFrame>(100);
-
-        StreamsDef { url, tx,  rx }
-    }
-}
+use crate::streamdef::StreamsDef;
 
 pub struct AppContext {
     pub streams: HashMap<String,StreamsDef>,

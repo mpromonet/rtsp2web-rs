@@ -7,7 +7,7 @@
 **
 ** -------------------------------------------------------------------------*/
 
-use retina::client::{SessionGroup, SetupOptions};
+use retina::client::{SessionGroup, SetupOptions, Transport};
 use retina::codec::{CodecItem, VideoFrame};
 use anyhow::{anyhow, Error};
 use log::{debug, error, info};
@@ -16,11 +16,11 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use futures::StreamExt;
 
-use crate::appcontext::DataFrame;
+use crate::streamdef::DataFrame;
 
-pub async fn run(url: url::Url, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
+pub async fn run(url: url::Url, transport: Option<String>, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
     let session_group = Arc::new(SessionGroup::default());
-    let r = run_inner(url, session_group.clone(), tx).await;
+    let r = run_inner(url, transport, session_group.clone(), tx).await;
     if let Err(e) = session_group.await_teardown().await {
         error!("TEARDOWN failed: {}", e);
     }
@@ -65,7 +65,7 @@ fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Se
     }                        
 }
 
-async fn run_inner(url: url::Url, session_group: Arc<SessionGroup>, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
+async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<SessionGroup>, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
     let stop = tokio::signal::ctrl_c();
 
     let mut session = retina::client::Session::describe(
@@ -109,9 +109,13 @@ async fn run_inner(url: url::Url, session_group: Arc<SessionGroup>, tx: broadcas
             info!("CFG: {:?}", cfg);
         }
     }
-
+    let transport_value = match transport {
+        Some(t) => t.parse::<Transport>().unwrap(),
+        None => Transport::default(), 
+    };    
+    let options = SetupOptions::transport(SetupOptions::default(), transport_value);
     session
-        .setup(video_stream, SetupOptions::default())
+        .setup(video_stream, options)
         .await?;
 
     let mut videosession = session

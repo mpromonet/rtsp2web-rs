@@ -23,11 +23,17 @@ use actix_web_actors::ws;
 mod wsservice;
 mod appcontext;
 mod rtspclient;
+mod streamdef;
+
+use streamdef::StreamsDef;
 
 #[derive(Parser)]
 pub struct Opts {
     #[clap(short)]
     config: String,
+
+    #[clap(short)]
+    transport: Option<String>,
 }
 
 fn read_json_file(file_path: &str) -> Result<serde_json::Value, Error> {
@@ -53,7 +59,7 @@ async fn main() {
             for (key, value) in urls.into_iter() {
                 let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap().clone();
                 let wsurl = "/".to_string() + key;
-                streams_defs.insert(wsurl, appcontext::StreamsDef::new(url));
+                streams_defs.insert(wsurl, StreamsDef::new(url));
             }
         },
         Err(err) => println!("Error reading JSON file: {:?}", err),
@@ -68,7 +74,7 @@ async fn main() {
 
         for (key, streamdef) in myws.streams.clone().into_iter() {
             tokio::spawn({
-                rtspclient::run(streamdef.url, streamdef.tx)
+                rtspclient::run(streamdef.url, opts.transport.clone(), streamdef.tx)
             });
             app = app.route(&key, web::get().to(ws_index));
         }
