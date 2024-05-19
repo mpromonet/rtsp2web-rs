@@ -16,26 +16,27 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use crate::streamdef::DataFrame;
 
-pub struct MyWebsocket {
+pub struct WebsocketService {
     pub rx: broadcast::Receiver<DataFrame>,
+    pub wsurl: String,
 }
 
-impl Actor for MyWebsocket {
+impl Actor for WebsocketService {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        info!("Websocket connected");
+        info!("Websocket {} connected", self.wsurl);
         let rx = self.rx.resubscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::<DataFrame>::new(rx);
         ctx.add_stream(stream);
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
-        info!("Websocket disconnected");
+        info!("Websocket {} disconnected", self.wsurl);
     }    
 }
 
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebsocket {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebsocketService {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
@@ -44,7 +45,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWebsocket {
     }
 }
 
-impl StreamHandler<Result<DataFrame, BroadcastStreamRecvError>> for MyWebsocket {
+impl StreamHandler<Result<DataFrame, BroadcastStreamRecvError>> for WebsocketService {
     fn handle(&mut self, msg: Result<DataFrame, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
         match msg {
             Ok(msg) => {

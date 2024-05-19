@@ -20,7 +20,7 @@ use std::fs::File;
 use std::io::Read;
 use actix_web_actors::ws;
 
-mod wsservice;
+mod websocketservice;
 mod appcontext;
 mod rtspclient;
 mod streamdef;
@@ -99,7 +99,7 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
     let wsurl = req.path().to_string();
     if myws.streams.contains_key(&wsurl) {
         let rx = myws.streams[&wsurl].rx.resubscribe();
-        Ok(ws::start(wsservice::MyWebsocket{ rx }, &req, stream)?)
+        Ok(ws::start(websocketservice::WebsocketService{ wsurl, rx }, &req, stream)?)
     } else {
         Ok(HttpResponse::NotFound().finish())
     }

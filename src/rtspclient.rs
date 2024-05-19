@@ -15,6 +15,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use futures::StreamExt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::streamdef::DataFrame;
 
@@ -35,9 +36,13 @@ fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Se
         m.is_random_access_point(),
         m.has_new_parameters(),
     );
+    let now = SystemTime::now();
+    let since_the_epoch = now
+        .duration_since(UNIX_EPOCH).unwrap();
+    let in_us = since_the_epoch.as_millis();
 
     let mut metadata = json!({
-        "ts": m.timestamp().elapsed_secs()*1000.0*1000.0,
+        "ts": in_us,
         "media": "video",
         "codec": codec,
     });
