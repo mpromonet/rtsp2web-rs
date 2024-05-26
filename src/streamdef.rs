@@ -35,6 +35,6 @@ impl StreamsDef {
     pub fn new(url: url::Url) -> Self {
         let (tx, rx) = broadcast::channel::<DataFrame>(100);
 
-        StreamsDef { url, tx,  rx }
+        Self { url, tx,  rx }
     }
 }
