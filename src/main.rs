@@ -41,7 +41,7 @@ fn read_json_file(file_path: &str) -> Result<serde_json::Value, Error> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let data = serde_json::from_str(&contents)?;
-    return Ok(data);
+    Ok(data)
 }
 
 
