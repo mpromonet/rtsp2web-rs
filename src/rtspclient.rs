@@ -72,6 +72,9 @@ fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
     let mut cfg: Vec<u8> = vec![];
     let sps_len = u16::from_be_bytes([data[6], data[7]]) as usize;
     let pps_len = u16::from_be_bytes([data[8 + sps_len + 1], data[9 + sps_len + 1]]) as usize;
+    if ((8+sps_len) > data.len()) || ((10+sps_len + pps_len) > data.len()) {
+        return Err(anyhow!("Error decoding cfg"));
+    }
     cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
     cfg.extend_from_slice(&data[8..8+sps_len]);
     cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
