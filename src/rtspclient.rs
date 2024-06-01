@@ -8,14 +8,15 @@
 ** -------------------------------------------------------------------------*/
 
 use retina::client::{SessionGroup, SetupOptions, Transport};
-use retina::codec::{CodecItem, VideoFrame};
+use retina::codec::{CodecItem, VideoFrame, VideoParameters};
 use anyhow::{anyhow, Error};
 use log::{debug, error, info};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use futures::StreamExt;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::Cursor;
+use std::io::prelude::*;
 
 use crate::streamdef::DataFrame;
 
@@ -28,7 +29,46 @@ pub async fn run(url: url::Url, transport: Option<String>, tx: broadcast::Sender
     r
 }
 
-fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Sender<DataFrame>) {
+pub fn avcc_to_annex_b_cursor(
+    data: &[u8],
+    nal_units: &mut Vec<u8>,
+) -> Result<(), Error> {
+    let mut data_cursor = Cursor::new(data);
+    let mut nal_lenght_bytes = [0u8; 4];
+    while let Ok(bytes_read) = data_cursor.read(&mut nal_lenght_bytes) {
+        if bytes_read == 0 {
+            break;
+        }
+        if bytes_read != nal_lenght_bytes.len() || bytes_read == 0 {
+            error!("NalLenghtParseError");
+        }
+        let nal_length = u32::from_be_bytes(nal_lenght_bytes) as usize;
+
+        if nal_length == 0 {
+            error!("NalLenghtParseError");
+        }
+        let mut nal_unit = vec![0u8; nal_length];
+        let bytes_read = data_cursor.read(&mut nal_unit);
+        match bytes_read {
+            Ok(bytes_read) => {
+                nal_units.push(0);
+                nal_units.push(0);
+                nal_units.push(0);
+                nal_units.push(1);
+                nal_units.extend_from_slice(&nal_unit[0..bytes_read]);
+                if bytes_read == 0 {
+                    break;
+                } else if bytes_read < nal_unit.len() {
+                    error!("NalUnitExtendError");
+                }
+            }
+            Err(e) => error!("{}", e),
+        };
+    }
+    Ok(())
+}
+
+fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadcast::Sender<DataFrame>) {
     debug!(
         "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
         m.timestamp().timestamp(),
@@ -36,29 +76,32 @@ fn process_video_frame(m: VideoFrame, codec: &str, cfg: &[u8], tx: broadcast::Se
         m.is_random_access_point(),
         m.has_new_parameters(),
     );
-    let now = SystemTime::now();
-    let since_the_epoch = now
-        .duration_since(UNIX_EPOCH).unwrap();
-    let in_us = since_the_epoch.as_millis();
+
+    let extra_data = video_params.extra_data();
+    debug!("extra_data:{:?}", extra_data);
+
+    let sps_len = u16::from_be_bytes([extra_data[6], extra_data[7]]) as usize;
+    let pps_len = u16::from_be_bytes([extra_data[8 + sps_len + 1], extra_data[9 + sps_len + 1]]) as usize;
+
+    let mut cfg: Vec<u8> = vec![0x00, 0x00, 0x00, 0x01];
+    cfg.extend_from_slice(&extra_data[8..8+sps_len]);
+    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    cfg.extend_from_slice(&extra_data[10+sps_len+1..10+sps_len+1+pps_len]);
+    debug!("CFG: {:?}", cfg);
 
     let mut metadata = json!({
-        "ts": in_us,
+        "ts":  (m.timestamp().timestamp() as f64)*1000.0,
         "media": "video",
-        "codec": codec,
+        "codec": video_params.rfc6381_codec(),
     });
     let mut data: Vec<u8> = vec![];
     if m.is_random_access_point() {
         metadata["type"] = "keyframe".into();
         data.extend_from_slice(&cfg);
     }
-    let mut framedata = m.data().to_vec();
-    if framedata.len() > 3 {
-        framedata[0] = 0;
-        framedata[1] = 0;
-        framedata[2] = 0;
-        framedata[3] = 1;
-    }
-    data.extend_from_slice(framedata.as_slice());
+    let mut nal_units: Vec<u8> = vec![];
+    let _ = avcc_to_annex_b_cursor(m.data(), &mut nal_units);
+    data.extend_from_slice(nal_units.as_slice());
 
     let frame = DataFrame {
         metadata,
@@ -74,7 +117,7 @@ async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<
     let stop = tokio::signal::ctrl_c();
 
     let mut session = retina::client::Session::describe(
-        url,
+        url.clone(),
         retina::client::SessionOptions::default()
             .session_group(session_group),
     )
@@ -84,36 +127,9 @@ async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<
     let video_stream = session
         .streams()
         .iter()
-        .position(|s| {
-            matches!(
-                s.parameters(),
-                Some(retina::codec::ParametersRef::Video(..))
-            )
-        })
+        .position(|s| s.media() == "video" && s.encoding_name() == "h264")
         .ok_or_else(|| anyhow!("couldn't find video stream"))?;
 
-    let video_params = match session.streams()[video_stream].parameters() {
-        Some(retina::codec::ParametersRef::Video(v)) => v.clone(),
-        Some(_) => unreachable!(),
-        None => unreachable!(),
-    };
-    debug!("video_params:{:?}", video_params);
-    let extra_data = video_params.extra_data();
-    debug!("extra_data:{:?}", extra_data);
-
-    let sps_position = extra_data.iter().position(|&nal| nal & 0x1F == 7);
-    let pps_position = extra_data.iter().position(|&nal| nal & 0x1F == 8);
-
-    let mut cfg: Vec<u8> = vec![];
-    if let (Some(sps), Some(pps)) = (sps_position, pps_position) {
-        if sps < pps {
-            cfg = vec![0x00, 0x00, 0x00, 0x01];
-            cfg.extend_from_slice(&extra_data[sps..pps]);
-            cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
-            cfg.extend_from_slice(&extra_data[pps..]);
-            info!("CFG: {:?}", cfg);
-        }
-    }
     let transport_value = match transport {
         Some(t) => t.parse::<Transport>().unwrap(),
         None => Transport::default(), 
@@ -123,17 +139,25 @@ async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<
         .setup(video_stream, options)
         .await?;
 
+    let video_params = match session.streams()[video_stream].parameters() {
+        Some(retina::codec::ParametersRef::Video(v)) => v.clone(),
+        Some(_) => unreachable!(),
+        None => unreachable!(),
+    };
+    info!("video_params:{:?}", video_params);
+
     let mut videosession = session
         .play(retina::client::PlayOptions::default())
         .await?
         .demuxed()?;
 
+    
     tokio::pin!(stop);
     loop {
         tokio::select! {
             item = videosession.next() => {
                 match item.ok_or_else(|| anyhow!("EOF"))?? {
-                    CodecItem::VideoFrame(m) => process_video_frame(m, video_params.rfc6381_codec(), cfg.as_slice(), tx.clone()),
+                    CodecItem::VideoFrame(m) => process_video_frame(m, video_params.clone(), tx.clone()),
                     _ => continue,
                 };
             },
