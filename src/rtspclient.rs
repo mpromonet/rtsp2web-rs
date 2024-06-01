@@ -35,35 +35,20 @@ pub fn avcc_to_annex_b_cursor(
 ) -> Result<(), Error> {
     let mut data_cursor = Cursor::new(data);
     let mut nal_lenght_bytes = [0u8; 4];
-    while let Ok(bytes_read) = data_cursor.read(&mut nal_lenght_bytes) {
-        if bytes_read == 0 {
-            break;
-        }
-        if bytes_read != nal_lenght_bytes.len() || bytes_read == 0 {
-            error!("NalLenghtParseError");
-        }
+    while let Ok(_) = data_cursor.read_exact(&mut nal_lenght_bytes) {
         let nal_length = u32::from_be_bytes(nal_lenght_bytes) as usize;
 
         if nal_length == 0 {
-            error!("NalLenghtParseError");
+            return Err(anyhow!("NalLenghtParseError"));
         }
         let mut nal_unit = vec![0u8; nal_length];
-        let bytes_read = data_cursor.read(&mut nal_unit);
-        match bytes_read {
-            Ok(bytes_read) => {
-                nal_units.push(0);
-                nal_units.push(0);
-                nal_units.push(0);
-                nal_units.push(1);
-                nal_units.extend_from_slice(&nal_unit[0..bytes_read]);
-                if bytes_read == 0 {
-                    break;
-                } else if bytes_read < nal_unit.len() {
-                    error!("NalUnitExtendError");
-                }
-            }
-            Err(e) => error!("{}", e),
-        };
+        data_cursor.read_exact(&mut nal_unit)?;
+
+        nal_units.push(0);
+        nal_units.push(0);
+        nal_units.push(0);
+        nal_units.push(1);
+        nal_units.extend_from_slice(&nal_unit);
     }
     Ok(())
 }
