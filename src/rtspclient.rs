@@ -68,6 +68,17 @@ pub fn avcc_to_annex_b_cursor(
     Ok(())
 }
 
+fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut cfg: Vec<u8> = vec![];
+    let sps_len = u16::from_be_bytes([data[6], data[7]]) as usize;
+    let pps_len = u16::from_be_bytes([data[8 + sps_len + 1], data[9 + sps_len + 1]]) as usize;
+    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    cfg.extend_from_slice(&data[8..8+sps_len]);
+    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    cfg.extend_from_slice(&data[10+sps_len+1..10+sps_len+1+pps_len]);
+    Ok(cfg)
+}
+
 fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadcast::Sender<DataFrame>) {
     debug!(
         "{}: size:{} is_random_access_point:{} has_new_parameters:{}",
@@ -80,13 +91,7 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     let extra_data = video_params.extra_data();
     debug!("extra_data:{:?}", extra_data);
 
-    let sps_len = u16::from_be_bytes([extra_data[6], extra_data[7]]) as usize;
-    let pps_len = u16::from_be_bytes([extra_data[8 + sps_len + 1], extra_data[9 + sps_len + 1]]) as usize;
-
-    let mut cfg: Vec<u8> = vec![0x00, 0x00, 0x00, 0x01];
-    cfg.extend_from_slice(&extra_data[8..8+sps_len]);
-    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
-    cfg.extend_from_slice(&extra_data[10+sps_len+1..10+sps_len+1+pps_len]);
+    let cfg = decode_cfg(extra_data).unwrap();
     debug!("CFG: {:?}", cfg);
 
     let mut metadata = json!({
@@ -97,7 +102,7 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     let mut data: Vec<u8> = vec![];
     if m.is_random_access_point() {
         metadata["type"] = "keyframe".into();
-        data.extend_from_slice(&cfg);
+        data.extend_from_slice(cfg.as_slice());
     }
     let mut nal_units: Vec<u8> = vec![];
     let _ = avcc_to_annex_b_cursor(m.data(), &mut nal_units);
