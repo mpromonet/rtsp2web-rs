@@ -67,19 +67,17 @@ async fn main() {
 
     // start the RTSP clients
     let app_context = appcontext::AppContext::new(streams_defs);
-    for (_ , streamdef) in app_context.streams.clone().into_iter() {
-        tokio::spawn({
-            rtspclient::run(streamdef.url, opts.transport.clone(), streamdef.tx)
-        });
-    }
+    app_context.streams.values().for_each(|streamdef| {
+        tokio::spawn(rtspclient::run(streamdef.url.clone(), opts.transport.clone(), streamdef.tx.clone()));
+    });
 
     // Start the Actix web server
     info!("start actix web server");
     HttpServer::new( move || {
         let mut app = App::new().app_data(web::Data::new(app_context.clone()));
 
-        for (key, _) in app_context.streams.clone().into_iter() {
-            app = app.route(&key, web::get().to(ws_index));
+        for key in app_context.streams.keys() {
+            app = app.route(key, web::get().to(ws_index));
         }
 
         app.service(version)
