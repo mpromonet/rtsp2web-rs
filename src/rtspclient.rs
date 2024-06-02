@@ -13,6 +13,7 @@ use anyhow::{anyhow, Error};
 use log::{debug, error, info};
 use serde_json::json;
 use std::sync::Arc;
+use std::vec;
 use tokio::sync::broadcast;
 use futures::StreamExt;
 use std::io::Cursor;
@@ -29,10 +30,10 @@ pub async fn run(url: url::Url, transport: Option<String>, tx: broadcast::Sender
     r
 }
 
-pub fn avcc_to_annex_b_cursor(
-    data: &[u8],
-    nal_units: &mut Vec<u8>,
-) -> Result<(), Error> {
+pub fn avcc_to_annex_b(
+    data: &[u8]
+) -> Result<Vec<u8>, Error> {
+    let mut nal_units = vec![];
     let mut data_cursor = Cursor::new(data);
     let mut nal_lenght_bytes = [0u8; 4];
     while let Ok(_) = data_cursor.read_exact(&mut nal_lenght_bytes) {
@@ -50,7 +51,7 @@ pub fn avcc_to_annex_b_cursor(
         nal_units.push(1);
         nal_units.extend_from_slice(&nal_unit);
     }
-    Ok(())
+    Ok(nal_units)
 }
 
 fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
@@ -92,8 +93,7 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
         metadata["type"] = "keyframe".into();
         data.extend_from_slice(cfg.as_slice());
     }
-    let mut nal_units: Vec<u8> = vec![];
-    let _ = avcc_to_annex_b_cursor(m.data(), &mut nal_units);
+    let nal_units = avcc_to_annex_b(m.data()).unwrap();
     data.extend_from_slice(nal_units.as_slice());
 
     let frame = DataFrame {
