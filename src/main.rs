@@ -85,7 +85,7 @@ async fn main() {
         app.service(version)
             .service(streams)
             .service(web::redirect("/", "/index.html"))
-            .service(Files::new("/", "./www").show_files_listing())
+            .service(Files::new("/", "./www"))
     })
     .bind(("0.0.0.0", 8080)).unwrap()
     .run()
