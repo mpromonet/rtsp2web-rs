@@ -65,9 +65,9 @@ async fn main() {
         Err(err) => println!("Error reading JSON file: {:?}", err),
     }
 
-    let myws = appcontext::AppContext::new(streams_defs);
-
-    for (_ , streamdef) in myws.streams.clone().into_iter() {
+    // start the RTSP clients
+    let app_context = appcontext::AppContext::new(streams_defs);
+    for (_ , streamdef) in app_context.streams.clone().into_iter() {
         tokio::spawn({
             rtspclient::run(streamdef.url, opts.transport.clone(), streamdef.tx)
         });
@@ -76,9 +76,9 @@ async fn main() {
     // Start the Actix web server
     info!("start actix web server");
     HttpServer::new( move || {
-        let mut app = App::new().app_data(web::Data::new(myws.clone()));
+        let mut app = App::new().app_data(web::Data::new(app_context.clone()));
 
-        for (key, _) in myws.streams.clone().into_iter() {
+        for (key, _) in app_context.streams.clone().into_iter() {
             app = app.route(&key, web::get().to(ws_index));
         }
 
@@ -98,10 +98,10 @@ async fn main() {
 
 // Websocket handler
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<appcontext::AppContext>) -> Result<HttpResponse, actix_web::Error> {
-    let myws = data.get_ref();
+    let app_context = data.get_ref();
     let wsurl = req.path().to_string();
-    if myws.streams.contains_key(&wsurl) {
-        let rx = myws.streams[&wsurl].rx.resubscribe();
+    if app_context.streams.contains_key(&wsurl) {
+        let rx = app_context.streams[&wsurl].rx.resubscribe();
         Ok(ws::start(websocketservice::WebsocketService{ wsurl, rx }, &req, stream)?)
     } else {
         Ok(HttpResponse::NotFound().finish())
@@ -110,9 +110,9 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
 
 #[get("/api/streams")]
 async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
-    let myws = data.get_ref();
+    let app_context = data.get_ref();
     let mut data = json!({});
-    for (key, streamdef) in &myws.streams {
+    for (key, streamdef) in &app_context.streams {
         data[key] = json!({
             "url": streamdef.url.to_string(),
         });

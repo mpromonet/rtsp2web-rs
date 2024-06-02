@@ -30,6 +30,8 @@ pub async fn run(url: url::Url, transport: Option<String>, tx: broadcast::Sender
     r
 }
 
+const MARKER: [u8; 4] = [0, 0, 0, 1];
+
 pub fn avcc_to_annex_b(
     data: &[u8]
 ) -> Result<Vec<u8>, Error> {
@@ -45,25 +47,22 @@ pub fn avcc_to_annex_b(
         let mut nal_unit = vec![0u8; nal_length];
         data_cursor.read_exact(&mut nal_unit)?;
 
-        nal_units.push(0);
-        nal_units.push(0);
-        nal_units.push(0);
-        nal_units.push(1);
+        nal_units.extend_from_slice(&MARKER);
         nal_units.extend_from_slice(&nal_unit);
     }
     Ok(nal_units)
 }
 
 fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut cfg: Vec<u8> = vec![];
     let sps_len = u16::from_be_bytes([data[6], data[7]]) as usize;
     let pps_len = u16::from_be_bytes([data[8 + sps_len + 1], data[9 + sps_len + 1]]) as usize;
-    if ((8+sps_len) > data.len()) || ((10+sps_len + pps_len) > data.len()) {
+    if ((8+sps_len) > data.len()) || ((10+sps_len+1+pps_len) > data.len()) {
         return Err(anyhow!("Error decoding cfg"));
     }
-    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    let mut cfg: Vec<u8> = vec![];
+    cfg.extend_from_slice(&MARKER);
     cfg.extend_from_slice(&data[8..8+sps_len]);
-    cfg.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+    cfg.extend_from_slice(&MARKER);
     cfg.extend_from_slice(&data[10+sps_len+1..10+sps_len+1+pps_len]);
     Ok(cfg)
 }
