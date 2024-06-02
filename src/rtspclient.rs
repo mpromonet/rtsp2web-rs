@@ -76,12 +76,6 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
         m.has_new_parameters(),
     );
 
-    let extra_data = video_params.extra_data();
-    debug!("extra_data:{:?}", extra_data);
-
-    let cfg = decode_cfg(extra_data).unwrap();
-    debug!("CFG: {:?}", cfg);
-
     let mut metadata = json!({
         "ts":  (m.timestamp().timestamp() as f64)*1000.0,
         "media": "video",
@@ -90,6 +84,12 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     let mut data: Vec<u8> = vec![];
     if m.is_random_access_point() {
         metadata["type"] = "keyframe".into();
+        
+        let extra_data = video_params.extra_data();
+        debug!("extra_data:{:?}", extra_data);
+    
+        let cfg = decode_cfg(extra_data).unwrap();
+        debug!("CFG: {:?}", cfg);    
         data.extend_from_slice(cfg.as_slice());
     }
     let nal_units = avcc_to_annex_b(m.data()).unwrap();
