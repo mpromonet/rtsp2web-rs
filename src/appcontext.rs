@@ -8,15 +8,15 @@
 ** -------------------------------------------------------------------------*/
 
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 use crate::streamdef::StreamsDef;
 
 pub struct AppContext {
-    pub streams: HashMap<String,StreamsDef>,
+    pub streams: HashMap<String,Arc<Mutex<StreamsDef>>>,
 }
 
 impl AppContext {
-    pub fn new(streams: HashMap<String,StreamsDef>) -> Self {
+    pub fn new(streams: HashMap<String,Arc<Mutex<StreamsDef>>>) -> Self {
         Self { streams }
     }
 }

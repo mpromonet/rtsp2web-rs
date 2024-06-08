@@ -19,6 +19,7 @@ pub struct StreamsDef {
     pub url: url::Url,
     pub tx: broadcast::Sender<DataFrame>,
     pub rx: broadcast::Receiver<DataFrame>,
+    pub count: u32,
 }
 
 impl Clone for StreamsDef {
@@ -27,6 +28,7 @@ impl Clone for StreamsDef {
             url: self.url.clone(),
             tx: self.tx.clone(),
             rx: self.rx.resubscribe(),
+            count: self.count,
         }
     }
 }
@@ -35,6 +37,6 @@ impl StreamsDef {
     pub fn new(url: url::Url) -> Self {
         let (tx, rx) = broadcast::channel::<DataFrame>(100);
 
-        Self { url, tx,  rx }
+        Self { url, tx,  rx, count: 0 }
     }
 }

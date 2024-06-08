@@ -9,16 +9,21 @@
 
 
 
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use actix::{Actor, AsyncContext, StreamHandler};
 use actix_web_actors::ws;
 use log::info;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use crate::streamdef::DataFrame;
+use crate::streamdef::StreamsDef;
 
 pub struct WebsocketService {
     pub rx: broadcast::Receiver<DataFrame>,
     pub wsurl: String,
+    pub wscontext: Arc<Mutex<StreamsDef>>,
 }
 
 impl Actor for WebsocketService {
@@ -29,10 +34,12 @@ impl Actor for WebsocketService {
         let rx = self.rx.resubscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::<DataFrame>::new(rx);
         ctx.add_stream(stream);
+        self.wscontext.lock().unwrap().count += 1;
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
         info!("Websocket {} disconnected", self.wsurl);
+        self.wscontext.lock().unwrap().count -= 1;
     }    
 }
 

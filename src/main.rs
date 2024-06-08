@@ -18,6 +18,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::sync::{Arc, Mutex};
 use actix_web_actors::ws;
 
 mod websocketservice;
@@ -59,7 +60,7 @@ async fn main() {
             for (key, value) in urls.into_iter() {
                 let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap().clone();
                 let wsurl = "/".to_string() + key;
-                streams_defs.insert(wsurl, StreamsDef::new(url));
+                streams_defs.insert(wsurl, Arc::new(Mutex::new(StreamsDef::new(url))));
             }
         },
         Err(err) => println!("Error reading JSON file: {:?}", err),
@@ -68,7 +69,8 @@ async fn main() {
     // start the RTSP clients
     let app_context = appcontext::AppContext::new(streams_defs);
     app_context.streams.values().for_each(|streamdef| {
-        tokio::spawn(rtspclient::run(streamdef.url.clone(), opts.transport.clone(), streamdef.tx.clone()));
+        let stream = streamdef.lock().unwrap();
+        tokio::spawn(rtspclient::run(stream.url.clone(), opts.transport.clone(), stream.tx.clone()));
     });
 
     // Start the Actix web server
@@ -82,6 +84,7 @@ async fn main() {
 
         app.service(version)
             .service(streams)
+            .service(logger_level)
             .service(web::redirect("/", "/index.html"))
             .service(Files::new("/", "./www"))
     })
@@ -99,8 +102,9 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
     let app_context = data.get_ref();
     let wsurl = req.path().to_string();
     if app_context.streams.contains_key(&wsurl) {
-        let rx = app_context.streams[&wsurl].rx.resubscribe();
-        Ok(ws::start(websocketservice::WebsocketService{ wsurl, rx }, &req, stream)?)
+        let wscontext =  app_context.streams[&wsurl].to_owned();
+        let rx = wscontext.lock().unwrap().rx.resubscribe();
+        Ok(ws::start(websocketservice::WebsocketService{ wsurl, rx, wscontext }, &req, stream)?)
     } else {
         Ok(HttpResponse::NotFound().finish())
     }
@@ -112,7 +116,7 @@ async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     let mut data = json!({});
     for (key, streamdef) in &app_context.streams {
         data[key] = json!({
-            "url": streamdef.url.to_string(),
+            "count": streamdef.lock().unwrap().count,
         });
     }
 
@@ -122,6 +126,26 @@ async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
 #[get("/api/version")]
 async fn version() -> HttpResponse {
     let data = json!("version");
+
+    HttpResponse::Ok().json(data)
+}
+
+#[get("/api/log")]
+async fn logger_level() -> HttpResponse {
+    let level = log::max_level(); 
+
+    let level_str = match level {
+        log::LevelFilter::Off => "Off",
+        log::LevelFilter::Error => "Error",
+        log::LevelFilter::Warn => "Warn",
+        log::LevelFilter::Info => "Info",
+        log::LevelFilter::Debug => "Debug",
+        log::LevelFilter::Trace => "Trace",
+    };
+
+    let data = json!({
+        "level": level_str,
+    });
 
     HttpResponse::Ok().json(data)
 }
