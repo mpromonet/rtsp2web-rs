@@ -131,7 +131,20 @@ async fn version() -> HttpResponse {
 }
 
 #[get("/api/log")]
-async fn logger_level() -> HttpResponse {
+async fn logger_level(query: web::Query<HashMap<String, String>>) -> HttpResponse {
+    
+    if let Some(level_str) = query.get("level") {
+        match level_str.as_str() {
+            "Off" => log::set_max_level(log::LevelFilter::Off),
+            "Error" => log::set_max_level(log::LevelFilter::Error),
+            "Warn" => log::set_max_level(log::LevelFilter::Warn),
+            "Info" => log::set_max_level(log::LevelFilter::Info),
+            "Debug" => log::set_max_level(log::LevelFilter::Debug),
+            "Trace" => log::set_max_level(log::LevelFilter::Trace),
+            _ => (),
+        }
+    }
+
     let level = log::max_level(); 
 
     let level_str = match level {
