@@ -1373,7 +1373,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "rs-rtsp2web"
+name = "rtsp-types"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9eda23daacde59c9e182db0a25e03f51f0108707169c09b4e5d931885470c5c"
+dependencies = [
+ "cookie-factory",
+ "nom",
+ "tinyvec",
+ "url",
+]
+
+[[package]]
+name = "rtsp2web-rs"
 version = "0.1.0"
 dependencies = [
  "actix",
@@ -1390,18 +1402,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
- "url",
-]
-
-[[package]]
-name = "rtsp-types"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9eda23daacde59c9e182db0a25e03f51f0108707169c09b4e5d931885470c5c"
-dependencies = [
- "cookie-factory",
- "nom",
- "tinyvec",
  "url",
 ]
 
