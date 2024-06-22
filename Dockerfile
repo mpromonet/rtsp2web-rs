@@ -1,6 +1,7 @@
 FROM rust as builder
 LABEL maintainer=michel.promonet@free.fr
 
+RUN USER=root cargo new --bin rtsp2web-rs
 WORKDIR /workdir
 
 COPY ./Cargo.lock ./Cargo.lock
