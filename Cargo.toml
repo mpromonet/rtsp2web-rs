@@ -2,6 +2,9 @@
 name = "rtsp2web-rs"
 version = "0.1.0"
 edition = "2021"
+authors = ["Michel Promonet <michel.promonet@free.fr>"]
+license = "The Unlicense"
+keywords = ["webrtc", "whep", "rtsp"]
 
 [dependencies]
 retina = "*"
