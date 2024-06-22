@@ -9,7 +9,7 @@ COPY ./Cargo.toml ./Cargo.toml
 COPY ./src ./src
 RUN cargo build --release
 
-FROM rust
+FROM rust:slim
 WORKDIR /app
 
 COPY --from=builder /workdir/target/release/rtsp2web-rs .
