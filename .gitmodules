@@ -1,0 +1,3 @@
+[submodule "www/video-ws"]
+	path = www/video-ws
+	url = https://github.com/mpromonet/video-ws.git

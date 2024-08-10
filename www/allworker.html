@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>RTSP2Web All Workers</title>
+        <link rel="icon" type="image/png" href="favicon.png">
+        <link rel="stylesheet" type="text/css" href="style.css">
+        <script type="module" src="video-ws/video-worker-ws.js"></script>       
+        <style>
+            video-worker-ws {
+                position: relative;
+                height: 15rem;
+                width: auto;
+                margin: 0.5rem;
+            }
+        </style>        
+    </head>    
+    <body>
+        <div id="gridcontent">
+        </div>
+        <footer>
+                <a href="https://github.com/mpromonet/rtsp2web">rtsp2web</a>
+                <div id="version"></div>
+        </footer>
+    </body>
+
+    <script>    
+        fetch("/api/version").then(r => r.json()).then(r => version.innerText = r);
+
+
+        fetch("/api/streams")
+        .then(r => r.json())
+        .then(r => {
+            const streamList = Object.keys(r);
+            streamList.forEach(stream => {
+                const streamElt = document.createElement("video-worker-ws");
+                streamElt.id = stream.substring(1);
+                streamElt.setAttribute("url", stream);
+                streamElt.title = stream.substring(1);
+                streamElt.onclick = (e) => {
+                    e.preventDefault();
+                    window.open("/video.html?" + stream, '_blank', 'noopener, noreferrer'); 
+                }
+                content.appendChild(streamElt);
+            });
+        });
+    </script>        
+</html>

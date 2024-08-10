@@ -1,0 +1,62 @@
+<html>
+<head>
+    <title>RTSP2Web</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script type="module" src="video-ws/video-ws.js"></script>
+</head>
+<body>
+    <header>
+        <nav id="menu"></nav>
+    </header>    
+    <div id="content">
+        <video-ws id="videows"></video-ws>
+    </div>
+    <footer>
+            <a href="https://github.com/mpromonet/rtsp2web">rtsp2web</a>
+            <div id="version"></div>
+    </footer>
+</body>
+<script type="module">
+    fetch("/api/version").then(r => r.json()).then(r => version.innerText = r);
+
+    function selectStream(stream) {
+        for (const opt of menu.getElementsByTagName('a')) {
+            if (opt.url === stream) {
+                videows.setAttribute("url", stream);
+                videows.title = stream.substring(1);
+                videows.onclick = (e) => {
+                    e.preventDefault();
+                    window.open("/video.html?" + stream, '_blank', 'noopener, noreferrer'); 
+                }
+                opt.className = "active";
+            } else {
+		        opt.className = "";
+            }
+	    }
+    }
+
+    fetch("/api/streams")
+        .then(r => r.json())
+        .then(r => {
+            const streamList = Object.keys(r);
+            streamList.forEach(stream => {
+                const option = document.createElement("a");
+                option.url = stream;
+                option.text = stream.substring(1);
+                option.onclick = function () { 
+                    if (this.className !== "active") {
+                        selectStream(stream);
+                    }
+                }
+                menu.appendChild(option);
+            });
+
+            if (streamList.length > 0) {
+                const random = streamList.sort(() => .5 - Math.random());
+                selectStream(random[0]);
+            }
+        });
+</script>
+
+</html>
