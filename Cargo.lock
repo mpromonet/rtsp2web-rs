@@ -1343,11 +1343,11 @@ checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
 
 [[package]]
 name = "retina"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef9828fb04b8b2bd763887cf4be07aa85aecaa7fce3ee3c7f57bf61e804e9e5c"
+checksum = "cd5652758580215edaf590a03298ff72ff5f965c2dea8d6e3f058ef728fbf773"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitstream-io",
  "bytes",
  "futures",
