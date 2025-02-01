@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/target/debug/rs-rtsp2web",
+            "program": "${workspaceFolder}/target/debug/rtsp2web-rs",
             "args": ["-c", "config.json"],
             "cwd": "${workspaceFolder}"
         }

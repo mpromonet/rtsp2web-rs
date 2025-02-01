@@ -119,7 +119,7 @@ async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<
     let video_stream = session
         .streams()
         .iter()
-        .position(|s| s.media() == "video" && s.encoding_name() == "h264")
+        .position(|s| s.media() == "video" && matches!(s.encoding_name(), "h264" | "h265"))
         .ok_or_else(|| anyhow!("couldn't find video stream"))?;
 
     let transport_value = match transport {
