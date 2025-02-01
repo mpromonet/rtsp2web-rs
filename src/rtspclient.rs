@@ -53,7 +53,7 @@ pub fn avcc_to_annex_b(
     Ok(nal_units)
 }
 
-fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
+fn parse_h264_config(data: &[u8]) -> Result<Vec<u8>, Error> {
     let sps_len = u16::from_be_bytes([data[6], data[7]]) as usize;
     let pps_len = u16::from_be_bytes([data[8 + sps_len + 1], data[9 + sps_len + 1]]) as usize;
     if ((8+sps_len) > data.len()) || ((10+sps_len+1+pps_len) > data.len()) {
@@ -65,6 +65,54 @@ fn decode_cfg(data: &[u8]) -> Result<Vec<u8>, Error> {
     cfg.extend_from_slice(&MARKER);
     cfg.extend_from_slice(&data[10+sps_len+1..10+sps_len+1+pps_len]);
     Ok(cfg)
+}
+
+fn parse_h265_config(data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let mut pos = 5;  // Skip header
+    let num_arrays = data[pos];
+    pos += 1;
+    
+    let mut cfg: Vec<u8> = vec![];
+    
+    for _ in 0..num_arrays {
+        if pos + 3 > data.len() {
+            return Err(anyhow!("Error decoding H.265 cfg: buffer too short"));
+        }
+        
+        pos += 1;
+        let num_nalus = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+        pos += 2;
+        
+        for _ in 0..num_nalus {
+            if pos + 2 > data.len() {
+                return Err(anyhow!("Error decoding H.265 cfg: invalid NALU length"));
+            }
+            
+            let nal_unit_length = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+            pos += 2;
+            
+            if pos + nal_unit_length > data.len() {
+                return Err(anyhow!("Error decoding H.265 cfg: invalid NALU"));
+            }
+            
+            cfg.extend_from_slice(&MARKER);
+            cfg.extend_from_slice(&data[pos..pos + nal_unit_length]);
+            pos += nal_unit_length;
+        }
+    }
+    
+    Ok(cfg)
+}
+
+pub fn parse_codec_config(video_params: VideoParameters) -> anyhow::Result<Vec<u8>> {
+    let data = video_params.extra_data();
+    debug!("extra_data:{:?}", data);
+
+    match video_params.rfc6381_codec() {
+        codec if codec.starts_with("avc1") => parse_h264_config(data),
+        codec if codec.starts_with("hvc1") => parse_h265_config(data),
+        _ => Err(anyhow!("Unsupported codec: {}", video_params.rfc6381_codec()))
+    }
 }
 
 fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadcast::Sender<DataFrame>) {
@@ -84,11 +132,8 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     let mut data: Vec<u8> = vec![];
     if m.is_random_access_point() {
         metadata["type"] = "keyframe".into();
-        
-        let extra_data = video_params.extra_data();
-        debug!("extra_data:{:?}", extra_data);
-    
-        let cfg = decode_cfg(extra_data).unwrap();
+            
+        let cfg = parse_codec_config(video_params).unwrap();
         debug!("CFG: {:?}", cfg);    
         data.extend_from_slice(cfg.as_slice());
     }
