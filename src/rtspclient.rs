@@ -54,16 +54,24 @@ pub fn avcc_to_annex_b(
 }
 
 fn parse_h264_config(data: &[u8]) -> Result<Vec<u8>, Error> {
-    let sps_len = u16::from_be_bytes([data[6], data[7]]) as usize;
-    let pps_len = u16::from_be_bytes([data[8 + sps_len + 1], data[9 + sps_len + 1]]) as usize;
-    if ((8+sps_len) > data.len()) || ((10+sps_len+1+pps_len) > data.len()) {
-        return Err(anyhow!("Error decoding cfg"));
-    }
+    let mut pos = 6;
     let mut cfg: Vec<u8> = vec![];
+    let sps_len = u16::from_be_bytes([data[pos], data[pos+1]]) as usize;
+    pos += 2;
+    if (pos+sps_len) > data.len() {
+        return Err(anyhow!("Error decoding sps"));
+    }
     cfg.extend_from_slice(&MARKER);
-    cfg.extend_from_slice(&data[8..8+sps_len]);
+    cfg.extend_from_slice(&data[pos..pos+sps_len]);
+    pos += sps_len + 1;
+
+    let pps_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+    pos += 2;
+    if (pos+pps_len) > data.len() {
+        return Err(anyhow!("Error decoding pps"));
+    }
     cfg.extend_from_slice(&MARKER);
-    cfg.extend_from_slice(&data[10+sps_len+1..10+sps_len+1+pps_len]);
+    cfg.extend_from_slice(&data[pos..pos+pps_len]);
     Ok(cfg)
 }
 
