@@ -33,17 +33,20 @@ use streamdef::StreamsDef;
 
 #[derive(Parser)]
 pub struct Opts {
-    #[clap(short)]
+    #[clap(short = 'C')]
     config: String,
 
     #[clap(short)]
     transport: Option<String>,
 
-    #[arg(long)]
+    #[arg(short)]
     cert: Option<String>,
 
-    #[arg(long)]
+    #[arg(short)]
     key: Option<String>,    
+
+    #[arg(short, default_value = "8080")]
+    port: u16,    
 }
 
 fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Error> {
@@ -123,9 +126,9 @@ async fn main() {
     let server = if let (Some(cert), Some(key)) = (opts.cert, opts.key) {
         let config = load_rustls_config(&cert, &key)
             .expect("Failed to load TLS config");
-        server.bind_rustls("0.0.0.0:8443", config)
+        server.bind_rustls(format!("0.0.0.0:{}", opts.port), config)
     } else {
-        server.bind("0.0.0.0:8080")
+        server.bind(format!("0.0.0.0:{}", opts.port))
     };
 
     server.expect("error").run().await.unwrap();
