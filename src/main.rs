@@ -11,6 +11,9 @@ use anyhow::Error;
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
 use clap::Parser;
+use rustls_pemfile::{certs, pkcs8_private_keys};
+use rustls::{ServerConfig, Certificate, PrivateKey};
+use std::io::BufReader;
 
 use log::info;
 
@@ -35,6 +38,34 @@ pub struct Opts {
 
     #[clap(short)]
     transport: Option<String>,
+
+    #[arg(long)]
+    cert: Option<String>,
+
+    #[arg(long)]
+    key: Option<String>,    
+}
+
+fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Error> {
+    let cert_file = &mut BufReader::new(File::open(cert_path)?);
+    let key_file = &mut BufReader::new(File::open(key_path)?);
+
+    let cert_chain = certs(cert_file)?
+        .into_iter()
+        .map(Certificate)
+        .collect();
+    
+    let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)?
+        .into_iter()
+        .map(PrivateKey)
+        .collect();
+
+    let config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(cert_chain, keys.remove(0))?;
+
+    Ok(config)
 }
 
 fn read_json_file(file_path: &str) -> Result<serde_json::Value, Error> {
@@ -75,7 +106,7 @@ async fn main() {
 
     // Start the Actix web server
     info!("start actix web server");
-    HttpServer::new( move || {
+    let server = HttpServer::new( move || {
         let mut app = App::new().app_data(web::Data::new(app_context.clone()));
 
         for key in app_context.streams.keys() {
@@ -87,11 +118,17 @@ async fn main() {
             .service(logger_level)
             .service(web::redirect("/", "/index.html"))
             .service(Files::new("/", "./www"))
-    })
-    .bind(("0.0.0.0", 8080)).unwrap()
-    .run()
-    .await
-    .unwrap();
+    });
+
+    let server = if let (Some(cert), Some(key)) = (opts.cert, opts.key) {
+        let config = load_rustls_config(&cert, &key)
+            .expect("Failed to load TLS config");
+        server.bind_rustls("0.0.0.0:8443", config)
+    } else {
+        server.bind("0.0.0.0:8080")
+    };
+
+    server.expect("error").run().await.unwrap();
 
 
     info!("Done");
