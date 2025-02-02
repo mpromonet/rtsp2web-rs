@@ -72,12 +72,15 @@ fn parse_h264_config(data: &[u8]) -> Result<Vec<u8>, Error> {
     }
     cfg.extend_from_slice(&MARKER);
     cfg.extend_from_slice(&data[pos..pos+pps_len]);
+    debug!("sps_len:{} pps_len:{} len:{}", sps_len, pps_len, data.len());
+
     Ok(cfg)
 }
 
 fn parse_h265_config(data: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let mut pos = 5;  // Skip header
+    let mut pos = 22;  // Skip header
     let num_arrays = data[pos];
+    debug!("num_arrays:{}", num_arrays);
     pos += 1;
     
     let mut cfg: Vec<u8> = vec![];
@@ -86,9 +89,12 @@ fn parse_h265_config(data: &[u8]) -> anyhow::Result<Vec<u8>> {
         if pos + 3 > data.len() {
             return Err(anyhow!("Error decoding H.265 cfg: buffer too short"));
         }
-        
+
+        let nalu = data[pos] & 0x3F;
+        debug!("nalu:{}", nalu);
         pos += 1;
         let num_nalus = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+        debug!("num_nalus:{}", num_nalus);
         pos += 2;
         
         for _ in 0..num_nalus {
