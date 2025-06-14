@@ -13,7 +13,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
-WORKDIR /workdir
+WORKDIR /workspace
 
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
@@ -27,7 +27,7 @@ USER $USERNAME
 FROM rust:slim
 WORKDIR /app
 
-COPY --from=builder ./target/release/rtsp2web-rs .
+COPY --from=builder /workspace/target/release/rtsp2web-rs .
 COPY ./key.pem .
 COPY ./cert.pem .
 COPY ./config.json .
