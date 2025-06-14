@@ -15,27 +15,23 @@ RUN groupadd --gid $USER_GID $USERNAME \
 
 WORKDIR /workdir
 
-USER $USERNAME
-
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 
 COPY ./src ./src
 
-RUN cargo fetch
-
-FROM builder AS build
-
 RUN cargo build --release
+
+USER $USERNAME
 
 FROM rust:slim
 WORKDIR /app
 
-COPY --from=build ./target/release/rtsp2web-rs .
-COPY --from=build ./key.pem .
-COPY --from=build ./cert.pem .
-COPY --from=build ./config.json .
-COPY --from=build ./www .
+COPY --from=builder ./target/release/rtsp2web-rs .
+COPY --from=builder ./key.pem .
+COPY --from=builder ./cert.pem .
+COPY --from=builder ./config.json .
+COPY --from=builder ./www .
 
 ENTRYPOINT ["./rtsp2web-rs"]
 CMD ["-C", "config.json", "-k", "key.pem", "-c", "cert.pem"]
