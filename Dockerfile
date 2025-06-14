@@ -20,9 +20,9 @@ USER $USERNAME
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 
-RUN cargo fetch
-
 COPY ./src ./src
+
+RUN cargo fetch
 
 FROM builder AS build
 
