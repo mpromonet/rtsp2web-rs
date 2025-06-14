@@ -28,10 +28,10 @@ FROM rust:slim
 WORKDIR /app
 
 COPY --from=builder ./target/release/rtsp2web-rs .
-COPY --from=builder ./key.pem .
-COPY --from=builder ./cert.pem .
-COPY --from=builder ./config.json .
-COPY --from=builder ./www .
+COPY ./key.pem .
+COPY ./cert.pem .
+COPY ./config.json .
+COPY ./www .
 
 ENTRYPOINT ["./rtsp2web-rs"]
 CMD ["-C", "config.json", "-k", "key.pem", "-c", "cert.pem"]
