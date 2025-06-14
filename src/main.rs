@@ -53,15 +53,11 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
     let cert_file = &mut BufReader::new(File::open(cert_path)?);
     let key_file = &mut BufReader::new(File::open(key_path)?);
 
-    let cert_chain = certs(cert_file)?
-        .into_iter()
-        .map(Certificate)
-        .collect();
+    let cert_chain = certs(cert_file)
+        .collect::<Result<_, _>>()?;
     
-    let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)?
-        .into_iter()
-        .map(PrivateKey)
-        .collect();
+    let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)
+        .collect::<Result<_, _>>()?;
 
     let config = ServerConfig::builder()
         .with_safe_defaults()
