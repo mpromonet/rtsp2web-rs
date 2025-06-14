@@ -31,7 +31,7 @@ COPY --from=builder /workspace/target/release/rtsp2web-rs .
 COPY ./key.pem .
 COPY ./cert.pem .
 COPY ./config.json .
-COPY ./www .
+COPY ./www ./www/
 
 ENTRYPOINT ["./rtsp2web-rs"]
 CMD ["-C", "config.json", "-k", "key.pem", "-c", "cert.pem"]
