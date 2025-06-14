@@ -1,4 +1,4 @@
-FROM rust as builder
+FROM rust AS builder
 LABEL maintainer=michel.promonet@free.fr
 
 WORKDIR /workdir
