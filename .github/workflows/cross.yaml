@@ -44,5 +44,5 @@ jobs:
                         config.json
                         key.pem
                         cert.pem
-                        www/*
+                        www
           target: ${{ matrix.platform.target }}
