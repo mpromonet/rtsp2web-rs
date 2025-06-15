@@ -40,4 +40,5 @@ jobs:
         with:
           executable-name: rtsp2web-rs
           changes-file: ""
+          extra-files: "config.json,key.pem,cert.pem,www/*"
           target: ${{ matrix.platform.target }}
