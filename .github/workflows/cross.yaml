@@ -39,4 +39,5 @@ jobs:
         uses: houseabsolute/actions-rust-release@v0
         with:
           executable-name: rtsp2web-rs
+          changes-file: ""
           target: ${{ matrix.platform.target }}
