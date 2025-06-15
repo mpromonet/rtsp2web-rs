@@ -25,6 +25,9 @@ RUN cargo build --release
 USER $USERNAME
 
 FROM rust:slim
+LABEL maintainer=michel.promonet@free.fr
+LABEL description="RTSP to websocket proxy written in Rust"
+LABEL org.opencontainers.image.description="RTSP to websocket proxy written in Rust"
 WORKDIR /app
 
 COPY --from=builder /workspace/target/release/rtsp2web-rs .
