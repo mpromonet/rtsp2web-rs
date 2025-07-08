@@ -11,7 +11,7 @@ retina = "*"
 futures = "0.3"
 anyhow = "1.0"
 log = "0.4"
-rustls = "0.20"
+rustls = "0.23"
 rustls-pemfile = "1.0"
 tokio = { version = "1.46", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
