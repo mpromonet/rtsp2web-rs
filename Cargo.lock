@@ -694,7 +694,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "env_filter",
- "jiff 0.2.15",
+ "jiff",
  "log",
 ]
 
@@ -1132,29 +1132,17 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jiff"
-version = "0.1.29"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c04ef77ae73f3cf50510712722f0c4e8b46f5aaa1bf5ffad2ae213e6495e78e5"
+checksum = "be1f93b8b1eb69c77f24bbb0afdf66f54b632ee39af40ca21c4365a1d7347e49"
 dependencies = [
+ "jiff-static",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "jiff"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be1f93b8b1eb69c77f24bbb0afdf66f54b632ee39af40ca21c4365a1d7347e49"
-dependencies = [
- "jiff-static",
- "log",
- "portable-atomic",
- "portable-atomic-util",
- "serde",
 ]
 
 [[package]]
@@ -1606,9 +1594,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "retina"
-version = "0.4.13"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cb881f2fb51b0b4e814a524bfb938007bdf3df5f8430ec0b4e014d2dc877f50"
+checksum = "783b4b9caaf5c46c93b9946590b29e58b267832b2b9e71fd85740f5001586fe4"
 dependencies = [
  "base64 0.22.1",
  "bitstream-io",
@@ -1617,7 +1605,7 @@ dependencies = [
  "h264-reader",
  "hex",
  "http-auth",
- "jiff 0.1.29",
+ "jiff",
  "log",
  "memchr",
  "pin-project",
@@ -1934,18 +1922,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+checksum = "f63587ca0f12b72a0600bcba1d40081f830876000bb46dd2337a3051618f4fc8"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.69"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
 dependencies = [
  "proc-macro2",
  "quote",
