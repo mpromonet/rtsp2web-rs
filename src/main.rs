@@ -11,8 +11,8 @@ use anyhow::Error;
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
 use clap::Parser;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use rustls::{ServerConfig, Certificate, PrivateKey};
+use rustls_pemfile::{certs, private_key};
+use rustls::ServerConfig;
 use std::io::BufReader;
 
 use log::info;
@@ -53,25 +53,18 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
 
     let cert_file = File::open(cert_path)?;
     let mut reader = BufReader::new(cert_file);
-    let cert_chain = certs(&mut reader)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to load certificates"))?
-        .into_iter()
-        .map(Certificate)
-        .collect::<Vec<_>>();
+    let cert_chain: Vec<_> = certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()?;
 
     // For keys:
     let key_file = File::open(key_path)?;
     let mut reader = BufReader::new(key_file);
-    let mut keys = pkcs8_private_keys(&mut reader)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to load private key"))?
-        .into_iter()
-        .map(PrivateKey)
-        .collect::<Vec<_>>();
+    let key = private_key(&mut reader)?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No private key found"))?;
         
     let config = ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(cert_chain, keys.remove(0))?;
+        .with_single_cert(cert_chain, key)?;
 
     Ok(config)
 }
@@ -132,8 +125,7 @@ async fn main() {
         let rustls_config = load_rustls_config(&cert, &key)
             .expect("Failed to load TLS config");
 
-        let config = ServerConfig::from(rustls_config);            
-        server.bind_rustls(format!("0.0.0.0:{}", opts.port), config)
+        server.bind_rustls_0_23(format!("0.0.0.0:{}", opts.port), rustls_config)
     } else {
         server.bind(format!("0.0.0.0:{}", opts.port))
     };
