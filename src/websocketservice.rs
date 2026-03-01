@@ -45,21 +45,17 @@ impl Actor for WebsocketService {
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebsocketService {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-            _ => (),
+        if let Ok(ws::Message::Ping(msg)) = msg {
+            ctx.pong(&msg);
         }
     }
 }
 
 impl StreamHandler<Result<DataFrame, BroadcastStreamRecvError>> for WebsocketService {
     fn handle(&mut self, msg: Result<DataFrame, BroadcastStreamRecvError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(msg) => {
-                ctx.text(serde_json::to_string(&msg.metadata).unwrap());
-                ctx.binary(msg.data);
-            },
-            _ => (),
+        if let Ok(msg) = msg {
+            ctx.text(serde_json::to_string(&msg.metadata).unwrap());
+            ctx.binary(msg.data);
         }
     }
 }

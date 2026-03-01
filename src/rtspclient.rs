@@ -38,7 +38,7 @@ pub fn avcc_to_annex_b(
     let mut nal_units = vec![];
     let mut data_cursor = Cursor::new(data);
     let mut nal_lenght_bytes = [0u8; 4];
-    while let Ok(_) = data_cursor.read_exact(&mut nal_lenght_bytes) {
+    while data_cursor.read_exact(&mut nal_lenght_bytes).is_ok() {
         let nal_length = u32::from_be_bytes(nal_lenght_bytes) as usize;
 
         if nal_length == 0 {

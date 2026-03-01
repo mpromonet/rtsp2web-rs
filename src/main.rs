@@ -54,7 +54,7 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
     let cert_file = File::open(cert_path)?;
     let mut reader = BufReader::new(cert_file);
     let cert_chain = certs(&mut reader)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to load certificates"))?
+        .map_err(|_| std::io::Error::other("Failed to load certificates"))?
         .into_iter()
         .map(Certificate)
         .collect::<Vec<_>>();
@@ -63,7 +63,7 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
     let key_file = File::open(key_path)?;
     let mut reader = BufReader::new(key_file);
     let mut keys = pkcs8_private_keys(&mut reader)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Failed to load private key"))?
+        .map_err(|_| std::io::Error::other("Failed to load private key"))?
         .into_iter()
         .map(PrivateKey)
         .collect::<Vec<_>>();
@@ -132,8 +132,7 @@ async fn main() {
         let rustls_config = load_rustls_config(&cert, &key)
             .expect("Failed to load TLS config");
 
-        let config = ServerConfig::from(rustls_config);            
-        server.bind_rustls(format!("0.0.0.0:{}", opts.port), config)
+        server.bind_rustls(format!("0.0.0.0:{}", opts.port), rustls_config)
     } else {
         server.bind(format!("0.0.0.0:{}", opts.port))
     };
