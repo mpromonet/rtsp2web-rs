@@ -98,18 +98,13 @@ async fn main() {
             for (key, value) in urls.into_iter() {
                 let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap().clone();
                 let wsurl = "/".to_string() + key;
-                streams_defs.insert(wsurl, Arc::new(Mutex::new(StreamsDef::new(url))));
+                streams_defs.insert(wsurl, Arc::new(Mutex::new(StreamsDef::new(url, opts.transport.clone()))));
             }
         },
         Err(err) => println!("Error reading JSON file: {:?}", err),
     }
 
-    // start the RTSP clients
     let app_context = appcontext::AppContext::new(streams_defs);
-    app_context.streams.values().for_each(|streamdef| {
-        let stream = streamdef.lock().unwrap();
-        tokio::spawn(rtspclient::run(stream.url.clone(), opts.transport.clone(), stream.tx.clone()));
-    });
 
     // Start the Actix web server
     info!("start actix web server");

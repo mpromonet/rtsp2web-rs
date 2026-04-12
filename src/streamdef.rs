@@ -8,6 +8,8 @@
 ** -------------------------------------------------------------------------*/
 
 use tokio::sync::broadcast;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 #[derive(Clone)]
 pub struct DataFrame {
@@ -17,26 +19,26 @@ pub struct DataFrame {
 
 pub struct StreamsDef {
     pub url: url::Url,
+    pub transport: Option<String>,
     pub tx: broadcast::Sender<DataFrame>,
     pub rx: broadcast::Receiver<DataFrame>,
     pub count: u32,
-}
-
-impl Clone for StreamsDef {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            tx: self.tx.clone(),
-            rx: self.rx.resubscribe(),
-            count: self.count,
-        }
-    }
+    pub stop_tx: Option<oneshot::Sender<()>>,
+    pub task: Option<JoinHandle<()>>,
 }
 
 impl StreamsDef {
-    pub fn new(url: url::Url) -> Self {
+    pub fn new(url: url::Url, transport: Option<String>) -> Self {
         let (tx, rx) = broadcast::channel::<DataFrame>(100);
 
-        Self { url, tx,  rx, count: 0 }
+        Self {
+            url,
+            transport,
+            tx,
+            rx,
+            count: 0,
+            stop_tx: None,
+            task: None,
+        }
     }
 }

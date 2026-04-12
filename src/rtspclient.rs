@@ -15,15 +15,25 @@ use serde_json::json;
 use std::sync::Arc;
 use std::vec;
 use tokio::sync::broadcast;
+use tokio::sync::oneshot;
 use futures::StreamExt;
 use std::io::Cursor;
 use std::io::prelude::*;
+use std::future::Future;
 
 use crate::streamdef::DataFrame;
 
-pub async fn run(url: url::Url, transport: Option<String>, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
+pub async fn run_until(
+    url: url::Url,
+    transport: Option<String>,
+    tx: broadcast::Sender<DataFrame>,
+    stop: oneshot::Receiver<()>,
+) -> Result<(), Error> {
     let session_group = Arc::new(SessionGroup::default());
-    let r = run_inner(url, transport, session_group.clone(), tx).await;
+    let r = run_inner(url, transport, session_group.clone(), tx, async move {
+        let _ = stop.await;
+    })
+    .await;
     if let Err(e) = session_group.await_teardown().await {
         error!("TEARDOWN failed: {}", e);
     }
@@ -164,8 +174,16 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     }                        
 }
 
-async fn run_inner(url: url::Url, transport: Option<String>, session_group: Arc<SessionGroup>, tx: broadcast::Sender<DataFrame>) -> Result<(), Error> {
-    let stop = tokio::signal::ctrl_c();
+async fn run_inner<Stop>(
+    url: url::Url,
+    transport: Option<String>,
+    session_group: Arc<SessionGroup>,
+    tx: broadcast::Sender<DataFrame>,
+    stop: Stop,
+) -> Result<(), Error>
+where
+    Stop: Future<Output = ()>,
+{
 
     let mut session = retina::client::Session::describe(
         url.clone(),

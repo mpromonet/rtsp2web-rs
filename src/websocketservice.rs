@@ -14,8 +14,9 @@ use std::sync::Mutex;
 
 use actix::{Actor, AsyncContext, StreamHandler};
 use actix_web_actors::ws;
-use log::info;
+use log::{error, info};
 use tokio::sync::broadcast;
+use tokio::sync::oneshot;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use crate::streamdef::DataFrame;
 use crate::streamdef::StreamsDef;
@@ -34,12 +35,49 @@ impl Actor for WebsocketService {
         let rx = self.rx.resubscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::<DataFrame>::new(rx);
         ctx.add_stream(stream);
-        self.wscontext.lock().unwrap().count += 1;
+
+        let mut wscontext = self.wscontext.lock().unwrap();
+        wscontext.count += 1;
+
+        let should_start = wscontext.count == 1
+            || wscontext
+                .task
+                .as_ref()
+                .map(|task| task.is_finished())
+                .unwrap_or(true);
+
+        if should_start {
+            let (stop_tx, stop_rx) = oneshot::channel();
+            let url = wscontext.url.clone();
+            let transport = wscontext.transport.clone();
+            let tx = wscontext.tx.clone();
+            let wsurl = self.wsurl.clone();
+
+            wscontext.stop_tx = Some(stop_tx);
+            wscontext.task = Some(tokio::spawn(async move {
+                info!("RTSP {} started", wsurl);
+                if let Err(e) = crate::rtspclient::run_until(url, transport, tx, stop_rx).await {
+                    error!("RTSP {} exited with error: {}", wsurl, e);
+                }
+                info!("RTSP {} stopped", wsurl);
+            }));
+        }
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
         info!("Websocket {} disconnected", self.wsurl);
-        self.wscontext.lock().unwrap().count -= 1;
+        let mut wscontext = self.wscontext.lock().unwrap();
+
+        if wscontext.count > 0 {
+            wscontext.count -= 1;
+        }
+
+        if wscontext.count == 0 {
+            if let Some(stop_tx) = wscontext.stop_tx.take() {
+                let _ = stop_tx.send(());
+            }
+            wscontext.task.take();
+        }
     }    
 }
 
