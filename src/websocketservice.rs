@@ -6,23 +6,18 @@
 ** SPDX-License-Identifier: Unlicense
 **
 ** -------------------------------------------------------------------------*/
-
-
-
 use std::sync::Arc;
 use std::sync::Mutex;
 
 use actix::{Actor, AsyncContext, StreamHandler};
 use actix_web_actors::ws;
 use log::{error, info};
-use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use crate::streamdef::DataFrame;
 use crate::streamdef::StreamsDef;
 
 pub struct WebsocketService {
-    pub rx: broadcast::Receiver<DataFrame>,
     pub wsurl: String,
     pub wscontext: Arc<Mutex<StreamsDef>>,
 }
@@ -32,7 +27,7 @@ impl Actor for WebsocketService {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Websocket {} connected", self.wsurl);
-        let rx = self.rx.resubscribe();
+        let rx = self.wscontext.lock().unwrap().tx.subscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::<DataFrame>::new(rx);
         ctx.add_stream(stream);
 

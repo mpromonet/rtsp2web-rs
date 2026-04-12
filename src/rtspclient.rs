@@ -13,7 +13,6 @@ use anyhow::{anyhow, Error};
 use log::{debug, error, info};
 use serde_json::json;
 use std::sync::Arc;
-use std::vec;
 use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 use futures::StreamExt;

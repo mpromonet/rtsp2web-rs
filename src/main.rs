@@ -96,7 +96,7 @@ async fn main() {
         Ok(data) => {
             let urls = data["urls"].as_object().unwrap();
             for (key, value) in urls.into_iter() {
-                let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap().clone();
+                let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap();
                 let wsurl = "/".to_string() + key;
                 streams_defs.insert(wsurl, Arc::new(Mutex::new(StreamsDef::new(url, opts.transport.clone()))));
             }
@@ -143,8 +143,7 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
     let wsurl = req.path().to_string();
     if app_context.streams.contains_key(&wsurl) {
         let wscontext =  app_context.streams[&wsurl].to_owned();
-        let rx = wscontext.lock().unwrap().rx.resubscribe();
-        Ok(ws::start(websocketservice::WebsocketService{ wsurl, rx, wscontext }, &req, stream)?)
+        Ok(ws::start(websocketservice::WebsocketService{ wsurl, wscontext }, &req, stream)?)
     } else {
         Ok(HttpResponse::NotFound().finish())
     }
