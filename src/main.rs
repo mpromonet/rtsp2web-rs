@@ -7,7 +7,7 @@
 **
 ** -------------------------------------------------------------------------*/
 
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
 use clap::Parser;
@@ -16,7 +16,7 @@ use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::io::BufReader;
 
-use log::info;
+use log::{error, info, warn};
 
 use serde_json::json;
 use std::collections::HashMap;
@@ -57,6 +57,9 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
     let cert_chain: Vec<CertificateDer<'static>> = certs(&mut reader)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| std::io::Error::other("Failed to load certificates"))?;
+    if cert_chain.is_empty() {
+        return Err(anyhow!("No certificates found in {}", cert_path));
+    }
 
     // For keys:
     let key_file = File::open(key_path)?;
@@ -67,6 +70,9 @@ fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, E
         .into_iter()
         .map(PrivateKeyDer::from)
         .collect();
+    if keys.is_empty() {
+        return Err(anyhow!("No PKCS#8 private key found in {}", key_path));
+    }
         
     let config = ServerConfig::builder()
         .with_no_client_auth()
@@ -92,16 +98,39 @@ async fn main() {
     let opts = Opts::parse();
 
     let mut streams_defs = HashMap::new();
-    match read_json_file(opts.config.as_str()) {
-        Ok(data) => {
-            let urls = data["urls"].as_object().unwrap();
-            for (key, value) in urls.into_iter() {
-                let url = url::Url::parse(value["video"].as_str().unwrap()).unwrap();
+    let data = match read_json_file(opts.config.as_str()) {
+        Ok(data) => data,
+        Err(err) => {
+            error!("Error reading JSON file {}: {}", opts.config, err);
+            return;
+        }
+    };
+
+    let Some(urls) = data["urls"].as_object() else {
+        error!("Invalid config {}: missing object field 'urls'", opts.config);
+        return;
+    };
+
+    for (key, value) in urls {
+        let Some(video_url) = value["video"].as_str() else {
+            warn!("Skipping stream '{}' because 'video' is missing or not a string", key);
+            continue;
+        };
+
+        match url::Url::parse(video_url) {
+            Ok(url) => {
                 let wsurl = "/".to_string() + key;
                 streams_defs.insert(wsurl, Arc::new(Mutex::new(StreamsDef::new(url, opts.transport.clone()))));
             }
-        },
-        Err(err) => println!("Error reading JSON file: {:?}", err),
+            Err(err) => {
+                warn!("Skipping stream '{}' with invalid URL '{}': {}", key, video_url, err);
+            }
+        }
+    }
+
+    if streams_defs.is_empty() {
+        error!("No valid streams configured in {}", opts.config);
+        return;
     }
 
     let app_context = appcontext::AppContext::new(streams_defs);
@@ -141,8 +170,8 @@ async fn main() {
 pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<appcontext::AppContext>) -> Result<HttpResponse, actix_web::Error> {
     let app_context = data.get_ref();
     let wsurl = req.path().to_string();
-    if app_context.streams.contains_key(&wsurl) {
-        let wscontext =  app_context.streams[&wsurl].to_owned();
+    if let Some(wscontext) = app_context.streams.get(&wsurl) {
+        let wscontext = wscontext.to_owned();
         Ok(ws::start(websocketservice::WebsocketService{ wsurl, wscontext }, &req, stream)?)
     } else {
         Ok(HttpResponse::NotFound().finish())
