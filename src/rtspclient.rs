@@ -8,7 +8,7 @@
 ** -------------------------------------------------------------------------*/
 
 use retina::client::{SessionGroup, SetupOptions, Transport};
-use retina::codec::{CodecItem, VideoFrame, VideoParameters};
+use retina::codec::{CodecItem, FrameFormat, VideoFrame, VideoParameters};
 use anyhow::{anyhow, Error};
 use log::{debug, error, info};
 use serde_json::json;
@@ -16,8 +16,6 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 use futures::StreamExt;
-use std::io::Cursor;
-use std::io::prelude::*;
 use std::future::Future;
 
 use crate::streamdef::DataFrame;
@@ -39,104 +37,6 @@ pub async fn run_until(
     r
 }
 
-const MARKER: [u8; 4] = [0, 0, 0, 1];
-
-pub fn avcc_to_annex_b(
-    data: &[u8]
-) -> Result<Vec<u8>, Error> {
-    let mut nal_units = vec![];
-    let mut data_cursor = Cursor::new(data);
-    let mut nal_lenght_bytes = [0u8; 4];
-    while data_cursor.read_exact(&mut nal_lenght_bytes).is_ok() {
-        let nal_length = u32::from_be_bytes(nal_lenght_bytes) as usize;
-
-        if nal_length == 0 {
-            return Err(anyhow!("NalLenghtParseError"));
-        }
-        let mut nal_unit = vec![0u8; nal_length];
-        data_cursor.read_exact(&mut nal_unit)?;
-
-        nal_units.extend_from_slice(&MARKER);
-        nal_units.extend_from_slice(&nal_unit);
-    }
-    Ok(nal_units)
-}
-
-fn parse_h264_config(data: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut pos = 6;
-    let mut cfg: Vec<u8> = vec![];
-    let sps_len = u16::from_be_bytes([data[pos], data[pos+1]]) as usize;
-    pos += 2;
-    if (pos+sps_len) > data.len() {
-        return Err(anyhow!("Error decoding sps"));
-    }
-    cfg.extend_from_slice(&MARKER);
-    cfg.extend_from_slice(&data[pos..pos+sps_len]);
-    pos += sps_len + 1;
-
-    let pps_len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-    pos += 2;
-    if (pos+pps_len) > data.len() {
-        return Err(anyhow!("Error decoding pps"));
-    }
-    cfg.extend_from_slice(&MARKER);
-    cfg.extend_from_slice(&data[pos..pos+pps_len]);
-    debug!("sps_len:{} pps_len:{} len:{}", sps_len, pps_len, data.len());
-
-    Ok(cfg)
-}
-
-fn parse_h265_config(data: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let mut pos = 22;  // Skip header
-    let num_arrays = data[pos];
-    debug!("num_arrays:{}", num_arrays);
-    pos += 1;
-    
-    let mut cfg: Vec<u8> = vec![];
-    
-    for _ in 0..num_arrays {
-        if pos + 3 > data.len() {
-            return Err(anyhow!("Error decoding H.265 cfg: buffer too short"));
-        }
-
-        let nalu = data[pos] & 0x3F;
-        debug!("nalu:{}", nalu);
-        pos += 1;
-        let num_nalus = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-        debug!("num_nalus:{}", num_nalus);
-        pos += 2;
-        
-        for _ in 0..num_nalus {
-            if pos + 2 > data.len() {
-                return Err(anyhow!("Error decoding H.265 cfg: invalid NALU length"));
-            }
-            
-            let nal_unit_length = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
-            pos += 2;
-            
-            if pos + nal_unit_length > data.len() {
-                return Err(anyhow!("Error decoding H.265 cfg: invalid NALU"));
-            }
-            
-            cfg.extend_from_slice(&MARKER);
-            cfg.extend_from_slice(&data[pos..pos + nal_unit_length]);
-            pos += nal_unit_length;
-        }
-    }
-    
-    Ok(cfg)
-}
-
-pub fn parse_codec_config(video_params: VideoParameters) -> anyhow::Result<Vec<u8>> {
-    let data = video_params.extra_data();
-    debug!("extra_data:{:?}", data);
-
-    match video_params.rfc6381_codec() {
-        codec if codec.starts_with("avc1") => parse_h264_config(data),
-        codec if codec.starts_with("hvc1") => parse_h265_config(data),
-        _ => Err(anyhow!("Unsupported codec: {}", video_params.rfc6381_codec()))
-    }
-}
 
 fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadcast::Sender<DataFrame>) {
     debug!(
@@ -156,12 +56,10 @@ fn process_video_frame(m: VideoFrame, video_params: VideoParameters, tx: broadca
     if m.is_random_access_point() {
         metadata["type"] = "keyframe".into();
             
-        let cfg = parse_codec_config(video_params).unwrap();
-        debug!("CFG: {:?}", cfg);    
-        data.extend_from_slice(cfg.as_slice());
+        let cfg = video_params.extra_data();
+        data.extend_from_slice(cfg);
     }
-    let nal_units = avcc_to_annex_b(m.data()).unwrap();
-    data.extend_from_slice(nal_units.as_slice());
+    data.extend_from_slice(m.data());
 
     let frame = DataFrame {
         metadata,
@@ -202,7 +100,9 @@ where
         Some(t) => t.parse::<Transport>().unwrap(),
         None => Transport::default(), 
     };    
-    let options = SetupOptions::transport(SetupOptions::default(), transport_value);
+
+    let options = SetupOptions::frame_format(SetupOptions::default(), FrameFormat::SIMPLE);
+    let options = SetupOptions::transport(options, transport_value);
     session
         .setup(video_stream, options)
         .await?;
