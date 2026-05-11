@@ -29,6 +29,7 @@ mod websocketservice;
 mod appcontext;
 mod rtspclient;
 mod streamdef;
+mod webtransportservice;
 
 use streamdef::StreamsDef;
 
@@ -47,7 +48,10 @@ pub struct Opts {
     key: Option<String>,    
 
     #[arg(short, default_value = "8080")]
-    port: u16,    
+    port: u16,
+
+    #[arg(short = 'q')]
+    quic_port: Option<u16>,
 }
 
 fn load_rustls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig, Error> {
@@ -93,6 +97,12 @@ fn read_json_file(file_path: &str) -> Result<serde_json::Value, Error> {
 
 #[tokio::main]
 async fn main() {
+    // Both ring and aws-lc-rs are compiled in; install ring as the explicit
+    // process-level rustls CryptoProvider before any TLS stack is initialised.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     let opts = Opts::parse();
@@ -133,7 +143,49 @@ async fn main() {
         return;
     }
 
-    let app_context = appcontext::AppContext::new(streams_defs);
+    // Build a 14-day self-signed identity for the QUIC endpoint.
+    // Short validity enables `serverCertificateHashes` in Chrome, allowing
+    // WebTransport to work with a self-signed cert for any origin.
+    let (quic_identity, cert_fingerprint) = if opts.quic_port.is_some() {
+        // Include the HTTPS cert's CN as an extra SAN hint if available.
+        let extra: Vec<String> = opts.cert.as_ref()
+            .and_then(|c| {
+                let f = std::fs::File::open(c).ok()?;
+                let mut r = std::io::BufReader::new(f);
+                let first_cert = { rustls_pemfile::certs(&mut r).next() };
+                first_cert?.ok().and_then(|_der| {
+                    // best-effort: pull the hostname from the system
+                    hostname::get().ok()
+                        .and_then(|h| h.into_string().ok())
+                        .map(|h| vec![h])
+                })
+            })
+            .unwrap_or_default();
+        match webtransportservice::build_identity(&extra) {
+            Ok((id, fp)) => {
+                info!("WebTransport cert fingerprint: {fp}");
+                (Some(id), Some(fp))
+            }
+            Err(e) => {
+                error!("Failed to build WebTransport identity: {e}");
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    let app_context = appcontext::AppContext::new(streams_defs, opts.quic_port, cert_fingerprint);
+
+    // Start the WebTransport (QUIC) server if --quic-port is set.
+    if let (Some(quic_port), Some(identity)) = (opts.quic_port, quic_identity) {
+        let app_ctx = app_context.clone();
+        tokio::spawn(async move {
+            if let Err(e) = webtransportservice::run(app_ctx, identity, quic_port).await {
+                error!("WebTransport server exited with error: {e}");
+            }
+        });
+    }
 
     // Start the Actix web server
     info!("start actix web server");
@@ -146,6 +198,7 @@ async fn main() {
 
         app.service(version)
             .service(streams)
+            .service(quic_info)
             .service(logger_level)
             .service(web::redirect("/", "/index.html"))
             .service(Files::new("/", "./www"))
@@ -191,10 +244,19 @@ async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     HttpResponse::Ok().json(data)
 }
 
+#[get("/api/quic")]
+async fn quic_info(data: web::Data<appcontext::AppContext>) -> HttpResponse {
+    let ctx = data.get_ref();
+    let response = match (ctx.quic_port, ctx.cert_fingerprint.as_deref()) {
+        (Some(port), Some(fp)) => serde_json::json!({ "port": port, "fingerprint": fp }),
+        _ => serde_json::json!(null),
+    };
+    HttpResponse::Ok().json(response)
+}
+
 #[get("/api/version")]
 async fn version() -> HttpResponse {
-    let data = json!("version");
-
+    let data = json!(env!("GIT_VERSION"));
     HttpResponse::Ok().json(data)
 }
 

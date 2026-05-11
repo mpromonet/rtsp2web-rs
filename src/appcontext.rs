@@ -13,11 +13,17 @@ use crate::streamdef::StreamsDef;
 
 pub struct AppContext {
     pub streams: HashMap<String,Arc<Mutex<StreamsDef>>>,
+    pub quic_port: Option<u16>,
+    pub cert_fingerprint: Option<String>,
 }
 
 impl AppContext {
-    pub fn new(streams: HashMap<String,Arc<Mutex<StreamsDef>>>) -> Self {
-        Self { streams }
+    pub fn new(
+        streams: HashMap<String,Arc<Mutex<StreamsDef>>>,
+        quic_port: Option<u16>,
+        cert_fingerprint: Option<String>,
+    ) -> Self {
+        Self { streams, quic_port, cert_fingerprint }
     }
 }
 
@@ -25,6 +31,8 @@ impl Clone for AppContext {
     fn clone(&self) -> Self {
         Self {
             streams: self.streams.clone(),
+            quic_port: self.quic_port,
+            cert_fingerprint: self.cert_fingerprint.clone(),
         }
     }
 }
