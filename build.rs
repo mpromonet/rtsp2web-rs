@@ -10,12 +10,14 @@
 use std::process::Command;
 
 fn main() {
-    let output = Command::new("git")
+    let git_version = Command::new("git")
         .args(["describe", "--tags", "--always"])
         .output()
-        .unwrap();
-
-    let git_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=GIT_VERSION={}", git_version);
 }

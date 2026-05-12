@@ -19,6 +19,8 @@ COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 
 COPY ./src ./src
+COPY ./build.rs ./build.rs
+COPY ./.git ./.git
 
 RUN cargo build --release
 
