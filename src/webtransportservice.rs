@@ -10,7 +10,6 @@
 use anyhow::Error;
 use log::{error, info, warn};
 use tokio::sync::broadcast;
-use wtransport::tls::Sha256DigestFmt;
 use wtransport::{Endpoint, Identity, ServerConfig};
 
 use crate::appcontext::AppContext;
@@ -22,7 +21,7 @@ use crate::streamdef::DataFrame;
 /// Browsers require ≤14 days validity when using `serverCertificateHashes`.
 /// The SANs include common local names; the hash-based check bypasses SAN
 /// validation in Chrome, so non-localhost origins work too.
-pub fn build_identity(extra_sans: &[String]) -> Result<(Identity, String), Error> {
+pub fn build_identity(extra_sans: &[String]) -> Result<(Identity, Vec<u8>), Error> {
     let mut sans: Vec<&str> = vec!["localhost", "127.0.0.1", "::1"];
     for s in extra_sans {
         sans.push(s.as_str());
@@ -36,7 +35,8 @@ pub fn build_identity(extra_sans: &[String]) -> Result<(Identity, String), Error
 
     let fingerprint = identity.certificate_chain().as_slice()[0]
         .hash()
-        .fmt(Sha256DigestFmt::BytesArray);
+        .as_ref()
+        .to_vec();
 
     Ok((identity, fingerprint))
 }

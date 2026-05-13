@@ -176,7 +176,7 @@ async fn main() {
             .unwrap_or_default();
         match webtransportservice::build_identity(&extra) {
             Ok((id, fp)) => {
-                info!("WebTransport cert fingerprint: {fp}");
+                info!("WebTransport cert fingerprint: {}", fp.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(":"));
                 (Some(id), Some(fp))
             }
             Err(e) => {

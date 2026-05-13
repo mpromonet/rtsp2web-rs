@@ -14,14 +14,14 @@ use crate::streamdef::StreamsDef;
 pub struct AppContext {
     pub streams: HashMap<String,Arc<Mutex<StreamsDef>>>,
     pub quic_port: Option<u16>,
-    pub cert_fingerprint: Option<String>,
+    pub cert_fingerprint: Option<Vec<u8>>,
 }
 
 impl AppContext {
     pub fn new(
         streams: HashMap<String,Arc<Mutex<StreamsDef>>>,
         quic_port: Option<u16>,
-        cert_fingerprint: Option<String>,
+        cert_fingerprint: Option<Vec<u8>>,
     ) -> Self {
         Self { streams, quic_port, cert_fingerprint }
     }
