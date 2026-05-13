@@ -10,6 +10,8 @@
 use anyhow::{anyhow, Error};
 use actix_files::Files;
 use actix_web::{get, web, App, HttpServer, HttpRequest, HttpResponse};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use clap::Parser;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls::ServerConfig;
@@ -32,6 +34,17 @@ mod streamdef;
 mod webtransportservice;
 
 use streamdef::StreamsDef;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(version, streams, quic_info, logger_level),
+    info(
+        title = "rtsp2web-rs",
+        description = "RTSP to WebSocket/WebTransport proxy",
+        version = "0.1.0"
+    )
+)]
+struct ApiDoc;
 
 #[derive(Parser)]
 pub struct Opts {
@@ -196,7 +209,8 @@ async fn main() {
             app = app.route(key, web::get().to(ws_index));
         }
 
-        app.service(version)
+        app.service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()))
+            .service(version)
             .service(streams)
             .service(quic_info)
             .service(logger_level)
@@ -231,6 +245,13 @@ pub async fn ws_index(req: HttpRequest, stream: web::Payload, data: web::Data<ap
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/streams",
+    responses(
+        (status = 200, description = "List of configured streams with connection counts")
+    )
+)]
 #[get("/api/streams")]
 async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     let app_context = data.get_ref();
@@ -244,6 +265,13 @@ async fn streams(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     HttpResponse::Ok().json(data)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/quic",
+    responses(
+        (status = 200, description = "QUIC/WebTransport port and certificate fingerprint, or null if disabled")
+    )
+)]
 #[get("/api/quic")]
 async fn quic_info(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     let ctx = data.get_ref();
@@ -254,12 +282,29 @@ async fn quic_info(data: web::Data<appcontext::AppContext>) -> HttpResponse {
     HttpResponse::Ok().json(response)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/version",
+    responses(
+        (status = 200, description = "Git version tag of the running binary")
+    )
+)]
 #[get("/api/version")]
 async fn version() -> HttpResponse {
     let data = json!(env!("GIT_VERSION"));
     HttpResponse::Ok().json(data)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/log",
+    params(
+        ("level" = Option<String>, Query, description = "Set log level: Off, Error, Warn, Info, Debug, Trace")
+    ),
+    responses(
+        (status = 200, description = "Current log level")
+    )
+)]
 #[get("/api/log")]
 async fn logger_level(query: web::Query<HashMap<String, String>>) -> HttpResponse {
     
