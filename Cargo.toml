@@ -16,7 +16,7 @@ rustls-pemfile = "2.2"
 tokio = { version = "1.52", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 clap = { version = "4.6", features = ["derive"] }
-itertools = "0.14"
+itertools = "0.15"
 url = "2.5"
 env_logger = "0.11"
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
