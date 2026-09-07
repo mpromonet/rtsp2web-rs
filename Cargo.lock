@@ -154,7 +154,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "mio",
- "socket2",
+ "socket2 0.6.3",
  "tokio",
  "tracing",
 ]
@@ -236,7 +236,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "smallvec",
- "socket2",
+ "socket2 0.6.3",
  "time",
  "tracing",
  "url",
@@ -1762,7 +1762,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2",
+ "socket2 0.6.3",
  "thiserror",
  "tokio",
  "tracing",
@@ -1799,7 +1799,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.52.0",
 ]
@@ -1960,9 +1960,9 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "retina"
-version = "0.4.19"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e15d30599ab355dde5e0d443463e1c6177278e3a9822e2393c0d3ed98789edd0"
+checksum = "0e0eb740f743e678e071628ff6bf84ed5ed03df879997cc3d43b5afef64aff93"
 dependencies = [
  "base64",
  "bitstream-io",
@@ -1980,8 +1980,8 @@ dependencies = [
  "rand 0.8.5",
  "sdp-types",
  "smallvec",
+ "socket2 0.5.10",
  "tokio",
- "tokio-util",
  "url",
 ]
 
@@ -2353,6 +2353,16 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
@@ -2500,7 +2510,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.6.3",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -2909,7 +2919,7 @@ dependencies = [
  "rustls-native-certs",
  "rustls-pki-types",
  "sha2 0.11.0",
- "socket2",
+ "socket2 0.6.3",
  "thiserror",
  "time",
  "tokio",
